@@ -1,0 +1,23 @@
+version: 2
+
+updates:
+  # Actions used by .github/workflows/ci.yml (checkout, setup-python, setup-node).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns: ["*"]
+    labels: [dependencies, github-actions]
+
+  # Base image in the Dockerfile (python:<version>-slim).
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels: [dependencies, docker]

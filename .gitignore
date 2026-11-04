@@ -1,0 +1,5 @@
+__pycache__/
+.env
+data/
+*.m3u
+*.m3u8

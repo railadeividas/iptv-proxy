@@ -1,0 +1,24 @@
+services:
+  iptv-proxy:
+    # To use the published image instead of building, replace `build:` with:
+    #   image: ghcr.io/railadeividas/iptv-proxy:latest
+    build:
+      context: .
+      args:
+        VERSION: ${APP_VERSION:-dev}
+    restart: unless-stopped
+    environment:
+      PLAYLIST_SOURCE: ${PLAYLIST_SOURCE:-}
+      UI_PASSWORD: ${UI_PASSWORD:-}
+    ports:
+      - "3333:3333"
+    volumes:
+      - iptv-proxy-data:/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+
+volumes:
+  iptv-proxy-data:
