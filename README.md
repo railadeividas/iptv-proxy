@@ -7,6 +7,17 @@ nested playlists, alternate audio/subtitles, init segments, media segments and k
 requests use the same headers. Video is streamed through without transcoding or recording.
 A web UI manages sources and chooses which channels are exported.
 
+<p align="center">
+  <a href="screenshots/manager.png?raw=true"><img src="screenshots/manager.png" alt="The playlist manager: sources with included-channel counts, status and refresh" width="49%"></a>
+  <a href="screenshots/manage-content.png?raw=true"><img src="screenshots/manage-content.png" alt="Choosing which groups and channels are exported" width="49%"></a>
+</p>
+<p align="center">
+  <a href="screenshots/add-playlist.png?raw=true"><img src="screenshots/add-playlist.png" alt="Adding a playlist by URL, file or hand-built M3U" width="49%"></a>
+  <a href="screenshots/edit-playlist.png?raw=true"><img src="screenshots/edit-playlist.png" alt="Editing a hand-built playlist" width="49%"></a>
+</p>
+
+<p align="center"><sub>Click a screenshot to view it full size.</sub></p>
+
 ## Quick start
 
 ```yaml
