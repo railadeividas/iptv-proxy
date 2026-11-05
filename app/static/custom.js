@@ -104,6 +104,19 @@ function channelCard(channel, index) {
     wrap.append(caption, input);
     body.append(wrap);
   }
+  const headers = element('div', 'custom-channel-field custom-headers');
+  const headersLabel = element('label', '', 'Request headers (optional)');
+  const headersInput = element('textarea');
+  headersInput.id = `custom-channel-${index}-headers`;
+  headersLabel.htmlFor = headersInput.id;
+  headersInput.dataset.key = 'headers';
+  headersInput.rows = 3;
+  headersInput.spellcheck = false;
+  headersInput.placeholder = 'Referer: https://provider.example/\nUser-Agent: Mozilla/5.0';
+  headersInput.value = channel.headers || '';
+  headersInput.oninput = () => { channel.headers = headersInput.value; headersInput.removeAttribute('aria-invalid'); };
+  headers.append(headersLabel, headersInput, element('p', 'hint', 'One “Name: value” per line. Supported: Referer, User-Agent, Origin, Cookie, Authorization, Accept. Sent only to this channel’s stream.'));
+  body.append(headers);
   const warning = element('p', 'custom-warning');
   warning.hidden = true;
   body.append(warning);
@@ -149,7 +162,7 @@ export async function openCustom(target) {
 
 function addChannel() {
   $('#custom-filter').value = '';
-  channels.push({name: '', url: '', group: '', id: '', logo: '', attrs: {}, extra: [], options: ''});
+  channels.push({name: '', url: '', group: '', id: '', logo: '', attrs: {}, extra: [], options: '', headers: ''});
   openIndex = channels.length - 1;
   renderChannels();
   const card = $('#custom-channel-list').querySelector(`[data-index="${openIndex}"]`);
@@ -187,8 +200,8 @@ async function save(event) {
       openIndex = error.index;
       renderChannels();
       const card = $('#custom-channel-list').querySelector(`[data-index="${error.index}"]`);
-      const key = channels[error.index].name?.trim() ? 'url' : 'name';
-      const input = card?.querySelector(`input[data-key="${key}"]`);
+      const key = error.field ?? (channels[error.index].name?.trim() ? 'url' : 'name');
+      const input = card?.querySelector(`[data-key="${key}"]`);
       card?.scrollIntoView({block: 'nearest'});
       input?.setAttribute('aria-invalid', 'true');
       input?.focus();

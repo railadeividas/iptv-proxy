@@ -30,7 +30,7 @@ def channel_details(channel):
     group = attributes.get("group-title") or next((s[8:].strip() for s in channel.metadata if s.startswith("#EXTGRP:")), "") or "Ungrouped"
     # Exclude the stream URL so rotating provider tokens do not reset selections.
     key = hashlib.sha256(json.dumps([attributes.get("tvg-id", ""), name, group], ensure_ascii=False).encode()).hexdigest()[:24]
-    return {"id": key, "name": name, "group": group}
+    return {"id": key, "name": name, "group": group, "tvg_id": attributes.get("tvg-id", "")}
 
 
 def is_included(details, rules):
@@ -171,6 +171,19 @@ class SourceManager:
                     "rules": rules, "groups": [
                         {"name": name, "channels": sorted(items.values(), key=lambda c: c["name"].casefold())}
                         for name, items in sorted(groups.items(), key=lambda pair: pair[0].casefold())]}
+
+    def raw_playlist(self, source_id):
+        """The playlist text as stored (a remote source's last good copy), for viewing in the manager."""
+        with self.lock:
+            source = next((s for s in self.sources if s["id"] == source_id), None)
+        if source is None:
+            raise ValueError("Playlist not found.")
+        path = self.cache_path(source_id) if source["kind"] == "url" else Path(source["location"])
+        try:
+            with path.open("rb") as stream:
+                return read_limited(stream)
+        except OSError:
+            raise ValueError("This playlist has no saved copy yet. Refresh it first.") from None
 
     def custom_content(self, source_id):
         with self.lock:

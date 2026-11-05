@@ -56,7 +56,7 @@
   </dialog>
   <dialog id="custom-dialog" class="manager-dialog" aria-labelledby="custom-title"><form id="custom-form">
     <div class="dialog-heading"><div><h2 id="custom-title">Edit playlist</h2><p id="custom-source" class="hint"></p></div><button type="button" id="custom-close" class="close" aria-label="Close playlist editor">×</button></div>
-    <p class="dialog-description">Add channels and edit their stream URLs, guide IDs, logos, and groups. Per-channel headers in pasted M3U text are kept.</p>
+    <p class="dialog-description">Add channels and edit their stream URLs, guide IDs, logos, groups and request headers. Headers in pasted M3U text (#EXTVLCOPT, #EXTHTTP) appear in each channel’s Request headers box.</p>
     <div class="content-search"><input id="custom-filter" type="search" placeholder="Filter channels by name, group or URL…" aria-label="Filter channels" autocomplete="off"><span id="custom-channel-count"></span></div>
     <div class="content-toolbar"><div><button type="button" id="custom-add">＋ Add channel</button><button type="button" id="custom-paste-toggle">Paste M3U</button></div></div>
     <div id="custom-paste-area" class="custom-paste" hidden><label for="custom-paste">M3U text to add</label><textarea id="custom-paste" rows="6" spellcheck="false" placeholder="#EXTINF:-1 group-title=&quot;News&quot;,Channel name&#10;https://example.com/live.m3u8"></textarea><button type="button" id="custom-paste-add" class="secondary">Add pasted channels</button></div>
@@ -68,7 +68,7 @@
   <dialog id="content-dialog" class="manager-dialog" aria-labelledby="content-title">
     <div class="dialog-heading"><div><h2 id="content-title">Manage content</h2><p id="content-source" class="hint"></p></div><button type="button" id="content-close" class="close" aria-label="Close content manager">×</button></div>
     <p class="dialog-description">Choose the groups and channels to include in your playlist.</p>
-    <div class="content-search"><input id="content-search" type="search" placeholder="Search groups or channels…" aria-label="Search groups or channels" autocomplete="off"><span id="selection-count"></span></div>
+    <div class="content-search"><input id="content-search" type="search" placeholder="Search groups, channels or TVG IDs…" aria-label="Search groups or channels" autocomplete="off"><span id="selection-count"></span></div>
     <div class="content-toolbar"><div><button id="include-all" type="button">Include all</button><button id="exclude-all" type="button">Exclude all</button><label class="inline-check"><input id="only-included" type="checkbox"> Show only included</label></div><div id="search-actions" hidden><button id="include-results" type="button">Include results</button><button id="exclude-results" type="button">Exclude results</button></div></div>
     <div id="content-tree" class="content-tree"></div>
     <details id="skipped" class="skipped" hidden><summary id="skipped-summary"></summary><div id="skipped-list" class="skipped-list"></div></details>

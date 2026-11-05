@@ -36,7 +36,8 @@ MAX_SESSIONS = 1000
 # Routes that need no authentication: health checks and the player-facing endpoints.
 PUBLIC_ROUTES = {"/healthz": "serve_health", "/playlist.m3u": "serve_playlist"}
 # The management API needs a signed-in session when UI_PASSWORD is set.
-MANAGED_ROUTES = {"/api/sources": "api_sources", "/api/content": "api_content", "/api/custom": "api_custom"}
+MANAGED_ROUTES = {"/api/sources": "api_sources", "/api/content": "api_content", "/api/custom": "api_custom",
+                  "/api/sources/raw": "api_raw"}
 
 
 def make_handler(proxy, manager, password=None, version=VERSION):
@@ -241,6 +242,14 @@ def make_handler(proxy, manager, password=None, version=VERSION):
                 self.reply_json(200, manager.content(parse_qs(route.query).get("source", [""])[0]))
             except ValueError as error:
                 self.reply_json(404, {"error": str(error)})
+
+        def api_raw(self, route):
+            # Shown inline as plain text so the browser displays it instead of downloading it.
+            try:
+                text = manager.raw_playlist(parse_qs(route.query).get("source", [""])[0])
+            except ValueError as error:
+                return self.reply(404, str(error) + "\n")
+            self.reply(200, text, "text/plain; charset=utf-8", headers={"X-Content-Type-Options": "nosniff"})
 
         def api_custom(self, route):
             try:

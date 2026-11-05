@@ -27,7 +27,7 @@ function matchingGroups() {
   return content.groups.map(group => {
     const groupMatches = !query || group.name.toLocaleLowerCase().includes(query);
     const matches = group.channels.filter(channel =>
-      (groupMatches || channel.name.toLocaleLowerCase().includes(query)) && (!onlyIncluded || included(channel)));
+      (groupMatches || channel.name.toLocaleLowerCase().includes(query) || (channel.tvg_id ?? '').toLocaleLowerCase().includes(query)) && (!onlyIncluded || included(channel)));
     return {...group, matches};
   }).filter(group => group.matches.length);
 }
@@ -70,6 +70,7 @@ function renderGroup(group, query) {
       check.checked = included(channel);
       check.onchange = () => { rules.channels[channel.id] = check.checked; selectionCount(); syncGroup(); };
       label.append(check, element('span', '', channel.name));
+      if (channel.tvg_id) label.append(Object.assign(element('code', 'tvg-id', channel.tvg_id), {title: 'TVG ID, the channel id used to match a program guide (EPG)'}));
       rows.append(label);
     }
     if (group.matches.length > limit) {

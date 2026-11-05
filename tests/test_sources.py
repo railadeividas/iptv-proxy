@@ -60,6 +60,20 @@ class SourceTests(unittest.TestCase):
         self.assertEqual(len(reloaded.get()[1]), 2)
         self.assertEqual(set(reloaded.get()[1]), set(self.manager.get()[1]))
 
+    def test_content_exposes_tvg_id(self):
+        source_id = self.add()['sources'][0]['id']
+        content = self.api(f'/api/content?source={source_id}')
+        self.assertEqual(content['groups'][0]['channels'][0]['tvg_id'], 'test')
+
+    def test_raw_playlist_is_plain_text_and_needs_a_known_source(self):
+        source_id = self.add()['sources'][0]['id']
+        with urlopen(f'{self.base_url}/api/sources/raw?source={source_id}', timeout=5) as response:
+            self.assertEqual(response.headers['Content-Type'], 'text/plain; charset=utf-8')
+            self.assertEqual(response.read().decode(), PLAYLIST)
+        with self.assertRaises(HTTPError) as error:
+            urlopen(f'{self.base_url}/api/sources/raw?source=missing', timeout=5)
+        self.assertEqual(error.exception.code, 404)
+
     def test_toggle_and_delete(self):
         source_id = self.add()['sources'][0]['id']
         disabled = self.api('/api/sources/toggle', {'id': source_id})

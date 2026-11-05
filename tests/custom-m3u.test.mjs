@@ -41,3 +41,28 @@ test('duplicate stream URLs are flagged', () => {
   const warnings = duplicateWarnings([{url: 'https://x/a'}, {url: 'https://x/b'}, {url: 'https://x/a'}]);
   assert.deepEqual([...warnings.keys()], [2]);
 });
+
+test('headers from M3U lines become editable text and are written back', () => {
+  const text = '#EXTM3U\n#EXTINF:-1,A\n#EXTVLCOPT:http-referrer=https://p/\n#EXTHTTP:{"User-Agent":"UA","Cookie":"c=1"}\n#EXTGRP:News\nhttps://x/a.m3u8\n';
+  const [channel] = parseCustom(text);
+  assert.equal(channel.headers, 'Referer: https://p/\nUser-Agent: UA\nCookie: c=1');
+  assert.deepEqual(channel.extra, ['#EXTGRP:News']);
+  const output = serializeCustom([channel]);
+  assert.ok(output.includes('#EXTVLCOPT:http-referrer=https://p/\n#EXTVLCOPT:http-user-agent=UA\n#EXTVLCOPT:http-cookie=c=1\n#EXTGRP:News\nhttps://x/a.m3u8'));
+  assert.equal(serializeCustom(parseCustom(output)), output);
+});
+
+test('headers typed in the editor are written and validated', () => {
+  const output = serializeCustom([{name: 'A', url: 'https://x/a', headers: 'referer: https://p/\n\nUSER-AGENT: Mozilla/5.0 (X11)', attrs: {}, extra: []}]);
+  assert.ok(output.includes('#EXTVLCOPT:http-referrer=https://p/\n#EXTVLCOPT:http-user-agent=Mozilla/5.0 (X11)'));
+  for (const headers of ['X-Custom: 1', 'Referer', 'Referer:']) {
+    assert.throws(() => serializeCustom([{name: 'A', url: 'https://x/a', headers}]),
+      error => error instanceof ChannelError && error.field === 'headers');
+  }
+});
+
+test('unrecognized #EXTHTTP content is kept as it was', () => {
+  const [channel] = parseCustom('#EXTM3U\n#EXTINF:-1,A\n#EXTHTTP:{"X-Token":"1"}\nhttps://x/a\n');
+  assert.equal(channel.headers, '');
+  assert.ok(serializeCustom([channel]).includes('#EXTHTTP:{"X-Token":"1"}'));
+});

@@ -131,6 +131,7 @@ function card(source) {
   const list = element('div', 'more-list');
   list.append(
     button('✎ Edit', () => { menu.removeAttribute('open'); openEdit(source); }, 'edit'),
+    button('▤ View raw', () => { menu.removeAttribute('open'); window.open('/api/sources/raw?source=' + encodeURIComponent(source.id), '_blank', 'noopener'); }, 'edit'),
     button('✕ Remove', () => { menu.removeAttribute('open'); confirmRemove(source); }, 'remove'));
   menu.append(trigger, list);
   const actions = element('div', 'source-actions');
