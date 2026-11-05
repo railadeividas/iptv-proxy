@@ -25,8 +25,10 @@ STATIC_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; ch
                 ".css": "text/css; charset=utf-8"}
 CHANNEL_PATH = re.compile(r"/channel/([0-9a-f]{24})(?:\.[a-z0-9]+)?")
 STREAM_PATH = re.compile(r"/stream(?:\.[a-z0-9]{1,12})?")
+DASH_PATH = re.compile(r"/dash/([0-9a-f]{24})/([0-9a-f]{64})/([A-Za-z0-9_-]+)/(.*)", re.DOTALL)
 STATIC_NAME = re.compile(r"[\w.-]+")
 HLS_TYPE = "application/vnd.apple.mpegurl"
+DASH_TYPE = "application/dash+xml"
 JSON_TYPE = "application/json"
 SESSION_COOKIE = "iptv_session"
 SESSION_SECONDS = 30 * 24 * 3600
@@ -192,6 +194,8 @@ def make_handler(proxy, manager, password=None, version=VERSION):
                     self.stream(channel, channel.url)
                 elif STREAM_PATH.fullmatch(route.path):
                     self.serve_signed_stream(route)
+                elif match := DASH_PATH.fullmatch(route.path):
+                    self.serve_dash(route, match)
                 elif route.path == "/" or STATIC_NAME.fullmatch(route.path[1:]):
                     self.serve_static(route.path)
                 else:
@@ -269,21 +273,33 @@ def make_handler(proxy, manager, password=None, version=VERSION):
                 return self.reply(404, "Channel no longer in source playlist\n")
             self.stream(channel, http_url(url))
 
+        def serve_dash(self, route, match):
+            channel_id, signature, token, rest = match.groups()
+            url = proxy.dash_upstream(channel_id, signature, token, rest, route.query)
+            if url is None:
+                return self.reply(403, "Invalid stream signature\n")
+            channel = proxy.catalog.get()[1].get(channel_id)
+            if channel is None:
+                return self.reply(404, "Channel no longer in source playlist\n")
+            self.stream(channel, url)
+
         # ---- upstream streaming ----------------------------------------------------
-        def send_hls_head(self):
+        def send_hls_head(self, content_type=HLS_TYPE):
             # The rewritten length is unknown without fetching the whole manifest.
             self.close_connection = True
             self.send_response(200)
-            self.send_header("Content-Type", HLS_TYPE)
+            self.send_header("Content-Type", content_type)
             self.send_header("Cache-Control", "no-store")
             self.send_header("Connection", "close")
             self.end_headers()
 
-        def send_manifest(self, data, channel, response):
+        def send_manifest(self, data, channel, response, dash=False):
             if len(data) > LIMIT:
-                raise ValueError("HLS manifest exceeds size limit")
-            text = proxy.rewrite(data.decode("utf-8-sig"), channel.id, response.geturl(), self.base)
-            self.reply(200, text, HLS_TYPE)
+                raise ValueError("Manifest exceeds size limit")
+            text = data.decode("utf-8-sig")
+            if dash:
+                return self.reply(200, proxy.rewrite_dash(text, channel.id, response.geturl(), self.base), DASH_TYPE)
+            self.reply(200, proxy.rewrite(text, channel.id, response.geturl(), self.base), HLS_TYPE)
 
         def stream(self, channel, url):
             headers = {"User-Agent": "IPTV-Header-Proxy/1.0", **channel.headers, "Accept-Encoding": "identity"}
@@ -296,17 +312,22 @@ def make_handler(proxy, manager, password=None, version=VERSION):
             with proxy.open(Request(url, headers=headers)) as response:
                 content_type = response.headers.get("Content-Type", "application/octet-stream")
                 encoding = (response.headers.get("Content-Encoding") or "").lower()
-                manifest_type = "mpegurl" in content_type.lower() or urlsplit(url).path.lower().endswith((".m3u8", ".m3u"))
+                dash = "dash+xml" in content_type.lower() or urlsplit(url).path.lower().endswith(".mpd")
+                manifest_type = dash or "mpegurl" in content_type.lower() or urlsplit(url).path.lower().endswith((".m3u8", ".m3u"))
                 if encoding in ("gzip", "x-gzip", "deflate") and manifest_type:
                     # Some providers compress manifests even though we ask for identity.
                     if head:
-                        return self.send_hls_head()
+                        return self.send_hls_head(DASH_TYPE if dash else HLS_TYPE)
                     try:
                         decoder = zlib.decompressobj(zlib.MAX_WBITS | 32)
                         data = decoder.decompress(response.read(LIMIT + 1), LIMIT + 1)
                     except zlib.error as error:
                         raise ValueError("Invalid compressed manifest") from error
-                    return self.send_manifest(data, channel, response)
+                    return self.send_manifest(data, channel, response, dash)
+                if dash:
+                    if head:
+                        return self.send_hls_head(DASH_TYPE)
+                    return self.send_manifest(response.read(LIMIT + 1), channel, response, True)
                 first = response.read(10)
                 is_hls = first.removeprefix(b"\xef\xbb\xbf").startswith(b"#EXTM3U") or "mpegurl" in content_type.lower()
                 if is_hls and head:

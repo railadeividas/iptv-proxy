@@ -80,11 +80,26 @@ https://cdn.provider.example/stream.m3u8|Referer=https%3A%2F%2Fprovider.example%
   but removed from the exported playlist, so credentials never reach players.
 - Entries that are not HTTP(S) URLs, or have malformed headers, are skipped and listed
   under **Manage content** with the reason. One bad entry never rejects the whole source.
-- Not supported: DASH rewriting, RTSP, DRM licensing, catch-up templates, VLC program
+- Not supported: RTSP, DRM licensing (encrypted DASH keeps its license URLs untouched), catch-up templates, VLC program
   selection, Kodi properties and browser-based authentication. Sources must be real media
   URLs, and cookies or tokens must still be valid; the proxy does not refresh them.
 - A remote source must be a channel list with `#EXTINF` entries, not a single HLS master
   playlist. Playlists and manifests are limited to 16 MiB.
+
+## DASH (.mpd)
+
+DASH channels work like HLS ones: the proxy fetches the manifest with the channel's headers
+and points every media URL in it (`BaseURL`, `SegmentTemplate`, `SegmentList`, init and index
+segments) back at itself, so segments, including range requests, get the same headers. Notes:
+
+- A manifest is detected by an `application/dash+xml` response or a `.mpd` path, and is served at
+  `/channel/<id>.mpd`.
+- Only the first `BaseURL` of a list of alternatives is kept, and `Location` is removed so manifest
+  refreshes stay on the proxy.
+- Segment links under `/dash/...` are signed per directory, so a player can fill in
+  `$Number$`/`$Time$` templates but cannot reach anything outside the signed directory.
+- Not handled: DRM, remote `xlink:href` elements and manifests that are neither `.mpd` nor
+  served as `application/dash+xml`.
 
 ## How it behaves
 
