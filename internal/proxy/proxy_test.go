@@ -194,7 +194,15 @@ func TestSegmentStreamedBeforeComplete(t *testing.T) {
 	if string(rest) != "56789" {
 		t.Fatalf("rest = %q", rest)
 	}
-	if _, ok := px.cache.get(cacheKey(Payload{U: up.URL + "/seg.ts"})); !ok {
+	// the player has every byte as soon as the last chunk is flushed; the proxy stores the copy right after that
+	// (when it reads the end of the upstream body), so give it a moment
+	var cached bool
+	for i := 0; i < 200 && !cached; i++ {
+		if _, cached = px.cache.get(cacheKey(Payload{U: up.URL + "/seg.ts"})); !cached {
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	if !cached {
 		t.Fatal("complete segment was not cached")
 	}
 }
