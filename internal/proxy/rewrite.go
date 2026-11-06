@@ -16,6 +16,8 @@ type rewriter struct {
 	ref    string   // Referer to propagate
 	ua     string   // User-Agent to propagate
 	exp    int64
+	prof   int64 // profile and channel to carry into the links (statistics)
+	ck     string
 }
 
 func (rw *rewriter) resolve(ref string) (*url.URL, bool) {
@@ -40,7 +42,7 @@ func cosmeticName(u *url.URL) string {
 
 func (rw *rewriter) fileURL(u *url.URL) string {
 	u.Fragment = ""
-	tok := rw.signer.Encode(Payload{U: u.String(), R: rw.ref, A: rw.ua, E: rw.exp})
+	tok := rw.signer.Encode(Payload{U: u.String(), R: rw.ref, A: rw.ua, E: rw.exp, P: rw.prof, C: rw.ck})
 	return rw.pub + "/x/" + tok + "/" + cosmeticName(u)
 }
 
@@ -54,7 +56,7 @@ func (rw *rewriter) dirURL(u *url.URL) string {
 		d.Path = d.Path[:strings.LastIndex(d.Path, "/")+1]
 		d.RawPath = ""
 	}
-	tok := rw.signer.Encode(Payload{U: d.String(), R: rw.ref, A: rw.ua, E: rw.exp, D: true})
+	tok := rw.signer.Encode(Payload{U: d.String(), R: rw.ref, A: rw.ua, E: rw.exp, D: true, P: rw.prof, C: rw.ck})
 	return rw.pub + "/xd/" + tok + "/"
 }
 

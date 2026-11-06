@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // withMigrations swaps the migration list for the length of a test.
@@ -314,5 +315,86 @@ func TestOpenRefusesNewerAndTooOldDatabases(t *testing.T) {
 	st.Close()
 	if _, err := Open(dir); err == nil || !strings.Contains(err.Error(), "delete iptv.db") {
 		t.Fatalf("a development database older than the baseline gets a clear refusal: %v", err)
+	}
+}
+
+// The activity tables are added next to profiles, users and channels already in the database; they follow their
+// profile when it is deleted, and PruneActivity enforces the history limits.
+func TestMigrateAddsActivity(t *testing.T) {
+	dir := t.TempDir()
+	real := migrations
+	withMigrations(t, real[:4]) // the database as it was before this migration
+	st, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.DB.Exec(`INSERT INTO users(id,username,password,role,created_at) VALUES(1,'ann','x','admin',1)`)
+	st.DB.Exec(`INSERT INTO profiles(id,owner_id,name,token,created_at) VALUES(1,1,'Living room','tok',1)`)
+	st.Close()
+
+	withMigrations(t, real)
+	st, err = Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	var n int
+	st.DB.QueryRow(`SELECT COUNT(*) FROM profiles`).Scan(&n)
+	if n != 1 {
+		t.Fatalf("profiles after migrating: %d", n)
+	}
+	now := time.Now().Unix()
+	st.TouchClient(1, "10.0.0.0/24", "VLC", "playlist", now)
+	st.TouchClient(1, "10.0.0.0/24", "VLC", "playlist", now)
+	st.TouchClient(1, "10.0.0.0/24", "VLC", "guide", now)
+	id := st.AddSession(Session{ProfileID: 1, CK: "A@SD", Mode: "proxy", IP: "10.0.0.0/24", UA: "VLC", Started: now - 60, Last: now - 60})
+	if id == 0 {
+		t.Fatal("a session of an existing profile is stored")
+	}
+	st.UpdateSession(id, now, 5000, 12)
+	if st.AddSession(Session{ProfileID: 99, CK: "A@SD", Mode: "proxy", Started: now, Last: now}) != 0 {
+		t.Fatal("a session of a missing profile is not stored")
+	}
+	cs, total, err := st.ActivityClients(ActivityFilter{Owner: 1}, 10, 0)
+	if err != nil || total != 1 || cs[0].Playlists != 2 || cs[0].Guides != 1 {
+		t.Fatalf("clients: %+v %v", cs, err)
+	}
+	if _, total, _ := st.ActivityClients(ActivityFilter{Owner: 2}, 10, 0); total != 0 {
+		t.Fatal("somebody else's devices are not listed")
+	}
+	tot, _ := st.ActivityTotals(ActivityFilter{})
+	if tot.Sessions != 1 || tot.Proxy != 1 || tot.Bytes != 5000 || tot.Seconds != 60 || tot.Clients != 1 {
+		t.Fatalf("totals: %+v", tot)
+	}
+	ps, _ := st.ActivityProfiles(ActivityFilter{Owner: 1})
+	if len(ps) != 1 || ps[0].Playlists != 2 || ps[0].Sessions != 1 || ps[0].Bytes != 5000 {
+		t.Fatalf("profiles: %+v", ps)
+	}
+	chs, total, _ := st.ActivityChannels(ActivityFilter{}, 10, 0)
+	if total != 1 || chs[0].CK != "A@SD" || chs[0].Viewers != 1 {
+		t.Fatalf("channels: %+v", chs)
+	}
+
+	st.PruneActivity(30, 0, 5000) // keep no sessions
+	if _, total, _ := st.ActivitySessions(ActivityFilter{}, 10, 0); total != 0 {
+		t.Fatal("0 sessions to keep deletes them")
+	}
+	if _, total, _ := st.ActivityClients(ActivityFilter{}, 10, 0); total != 1 {
+		t.Fatal("devices stay")
+	}
+	st.DB.Exec(`UPDATE activity_clients SET last_seen=1`)
+	st.PruneActivity(30, 100, 5000)
+	if _, total, _ := st.ActivityClients(ActivityFilter{}, 10, 0); total != 0 {
+		t.Fatal("devices older than the history are deleted")
+	}
+
+	st.AddSession(Session{ProfileID: 1, CK: "B", Mode: "redirect", Started: now, Last: now})
+	st.TouchClient(1, "", "", "play", now)
+	if _, err := st.DB.Exec(`DELETE FROM profiles WHERE id=1`); err != nil {
+		t.Fatal(err)
+	}
+	st.DB.QueryRow(`SELECT (SELECT COUNT(*) FROM activity_sessions)+(SELECT COUNT(*) FROM activity_clients)`).Scan(&n)
+	if n != 0 {
+		t.Fatal("activity follows a deleted profile")
 	}
 }

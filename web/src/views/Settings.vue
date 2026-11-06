@@ -3,6 +3,7 @@ const TABS = [
   { group: 'iptv-org', label: 'iptv-org' },
   { group: 'health', label: 'Health' },
   { group: 'proxy', label: 'Proxy' },
+  { group: 'stats', label: 'Stats' },
   { group: 'security', label: 'Security' },
 ]
 </script>

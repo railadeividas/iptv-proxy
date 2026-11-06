@@ -39,7 +39,31 @@ type Proxy struct {
 	client atomic.Pointer[http.Client]
 	inUse  atomic.Int64 // open proxied connections
 	cache  *segCache
+
+	// Observe, when set, is told about every proxied request that carries a profile (see Payload.P). It returns
+	// what to call with each number of bytes written to the player and when the request is over. Set it before serving.
+	Observe func(r *http.Request, pl Payload) (add func(n int), done func())
 }
+
+// InUse is the number of proxied connections open right now.
+func (p *Proxy) InUse() int { return int(p.inUse.Load()) }
+
+// CountWriter reports the bytes written to a response.
+type CountWriter struct {
+	http.ResponseWriter
+	OnWrite func(n int)
+}
+
+func (c *CountWriter) Write(b []byte) (int, error) {
+	n, err := c.ResponseWriter.Write(b)
+	if n > 0 && c.OnWrite != nil {
+		c.OnWrite(n)
+	}
+	return n, err
+}
+
+// Unwrap lets http.ResponseController reach the real writer (flushing).
+func (c *CountWriter) Unwrap() http.ResponseWriter { return c.ResponseWriter }
 
 func New(signer *Signer, set *settings.Settings) *Proxy {
 	p := &Proxy{signer: signer, set: set, cache: newSegCache(set)}
@@ -203,7 +227,7 @@ func (p *Proxy) Respond(w http.ResponseWriter, in *http.Request, up *Upstream, p
 	setCORS(w)
 	h := w.Header()
 	if up.Kind != "" {
-		rw := &rewriter{signer: p.signer, pub: pub, base: up.URL, ref: up.Payload.R, ua: up.Payload.A, exp: time.Now().Add(p.set.Hours("link_expiry_hours")).Unix()}
+		rw := &rewriter{signer: p.signer, pub: pub, base: up.URL, ref: up.Payload.R, ua: up.Payload.A, exp: time.Now().Add(p.set.Hours("link_expiry_hours")).Unix(), prof: up.Payload.P, ck: up.Payload.C}
 		var out []byte
 		if up.Kind == "hls" {
 			out = rw.HLS(up.Manifest)
@@ -361,6 +385,12 @@ func (p *Proxy) ServeSigned(w http.ResponseWriter, r *http.Request, prefix, pub 
 		return
 	}
 	_ = tail
+
+	if p.Observe != nil && pl.P != 0 && r.Method == http.MethodGet {
+		add, done := p.Observe(r, pl)
+		defer done()
+		w = &CountWriter{ResponseWriter: w, OnWrite: add}
+	}
 
 	if r.Method == http.MethodGet && r.Header.Get("Range") == "" {
 		if c, ok := p.cache.get(cacheKey(pl)); ok {

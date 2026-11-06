@@ -9,6 +9,7 @@ export const router = createRouter({
     { path: '/login', name: 'login', component: () => import('./views/Login.vue'), meta: { public: true } },
     { path: '/channels', name: 'channels', component: () => import('./views/Channels.vue') },
     { path: '/profiles/:id?', name: 'profiles', component: () => import('./views/Profiles.vue') },
+    { path: '/stats', name: 'stats', component: () => import('./views/Stats.vue') },
     { path: '/sources', name: 'sources', component: () => import('./views/Sources.vue'), meta: { perm: 'sources' } },
     { path: '/health', name: 'health', component: () => import('./views/Health.vue'), meta: { perm: 'health' } },
     {
@@ -18,7 +19,7 @@ export const router = createRouter({
       children: [
         { path: '', name: 'settings', component: () => import('./components/SettingsPanel.vue'), props: { group: 'general' } },
         { path: 'users', name: 'settings-users', component: () => import('./components/UsersPanel.vue') },
-        { path: ':group(iptv-org|health|proxy|security)', name: 'settings-group', component: () => import('./components/SettingsPanel.vue'), props: true },
+        { path: ':group(iptv-org|health|proxy|stats|security)', name: 'settings-group', component: () => import('./components/SettingsPanel.vue'), props: true },
       ],
     },
     { path: '/:rest(.*)*', redirect: '/channels' },

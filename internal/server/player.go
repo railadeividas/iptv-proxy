@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 
+	"iptv-proxy/internal/activity"
 	"iptv-proxy/internal/playlist"
 	"iptv-proxy/internal/proxy"
 	"iptv-proxy/internal/store"
@@ -30,6 +31,7 @@ func (s *Server) playlist(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	s.act.Client(r, p.ID, "playlist")
 	if !s.st.Ready() {
 		w.Header().Set("Retry-After", "60")
 		http.Error(w, "channel data is still loading, try again shortly", http.StatusServiceUnavailable)
@@ -79,6 +81,7 @@ func (s *Server) guide(gz bool) http.HandlerFunc {
 		if !ok {
 			return
 		}
+		s.act.Client(r, p.ID, "guide")
 		if !s.epg.Enabled() || !s.epg.HasGuide() {
 			w.Header().Set("Retry-After", "300")
 			http.Error(w, "guide is not available yet", http.StatusServiceUnavailable)
@@ -163,6 +166,7 @@ func (s *Server) channel(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if mode == "redirect" || (first.UserAgent == "" && first.Referrer == "") {
+			s.act.Begin(r, p.ID, p, ck, activity.Redirect, activity.HostOf(first.URL)).End()
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			http.Redirect(w, r, first.URL, http.StatusFound)
 			return
@@ -185,7 +189,7 @@ func (s *Server) channel(w http.ResponseWriter, r *http.Request) {
 		if ua == "" {
 			ua = proxy.CompatUA(s.set, p.Compat)
 		}
-		up, err := s.px.Open(r.Context(), r, proxy.Payload{U: st.URL, R: st.Referrer, A: ua})
+		up, err := s.px.Open(r.Context(), r, proxy.Payload{U: st.URL, R: st.Referrer, A: ua, P: p.ID, C: ck})
 		if err != nil {
 			if r.Context().Err() == nil {
 				s.st.MarkPlayback(st.URL, false)
@@ -193,6 +197,11 @@ func (s *Server) channel(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		s.st.MarkPlayback(st.URL, true)
+		if r.Method == http.MethodGet { // a HEAD probe is not someone watching
+			live := s.act.Begin(r, p.ID, p, ck, activity.Proxy, activity.HostOf(st.URL))
+			defer live.End()
+			w = &proxy.CountWriter{ResponseWriter: w, OnWrite: live.Add}
+		}
 		s.px.Respond(w, r, up, s.pub(r))
 		return
 	}

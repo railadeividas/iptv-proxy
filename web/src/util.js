@@ -79,6 +79,14 @@ export function dur(sec) {
   if (m < 60) return m + ' min' + (s ? ' ' + s + ' s' : '')
   return Math.floor(m / 60) + ' h ' + (m % 60) + ' min'
 }
+// 1536000 -> "1.5 MB"
+export function bytes(n) {
+  if (!n) return '0 B'
+  const u = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.min(u.length - 1, Math.floor(Math.log(n) / Math.log(1024)))
+  const v = n / 1024 ** i
+  return (i === 0 || v >= 100 ? Math.round(v) : v.toFixed(1)) + ' ' + u[i]
+}
 export const copy = async (text) => navigator.clipboard.writeText(text)
 
 // one line on what a failure reason usually means

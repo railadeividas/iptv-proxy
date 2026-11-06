@@ -6,6 +6,7 @@ import { store } from './store'
 //   catalog  – channel catalogue or custom sources changed
 //   profiles – a profile was created / edited / deleted (possibly in another tab)
 //   settings – a setting was changed (possibly in another tab)
+//   activity – a viewing session started or ended, or a device used a link (the Stats page)
 const handlers = {}
 export function on(type, fn) {
   ;(handlers[type] ||= new Set()).add(fn)
@@ -34,7 +35,7 @@ function open() {
     retry = 0
     store.wsConnected = true
     // after an outage we may have missed events: tell views to resync
-    if (reconnected) for (const t of ['streams', 'catalog', 'profiles', 'settings']) emit(t, null)
+    if (reconnected) for (const t of ['streams', 'catalog', 'profiles', 'settings', 'activity']) emit(t, null)
   }
   socket.onmessage = (e) => {
     try {

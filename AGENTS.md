@@ -19,6 +19,7 @@ internal/proxy    signed links, HLS/DASH rewriting, upstream requests
 internal/epg      guide grabber + per-profile XMLTV
 internal/health   stream probing, Details() for the Health page
 internal/events   WebSocket event hub
+internal/activity who uses the player links: running sessions (memory), saved to the database; Stats page data
 internal/server   HTTP routes, admin API, player endpoints, SPA hosting
 internal/playlist M3U parsing/writing
 web/              Vue 3 + vite; `web/dist` is built output and embedded (not committed)
@@ -146,6 +147,21 @@ go vet ./... && go test ./...
 - Tests that start real checks must use a local server and a fresh data dir, and must switch the scope to `off` first: the
   default scope (`selected`) probes every channel that is in a profile as soon as it is due.
 
+## Stats
+
+- `internal/activity` records who uses the player links; the Stats page shows it. Playlist and guide fetches call `Tracker.Client`
+  (a device = profile + address + player name, with lifetime counters). A watch session is one device on one channel: the channel
+  link (`player.go`) and every proxied segment (`proxy.Observe`, fed by the profile id `P` and channel key `C` that signed links carry)
+  call `Tracker.Begin`, and the returned `Live` counts bytes and ends the request. A redirect is a session with mode `redirect` and no
+  bytes: we never see the player again. Never do database work in the request path for sessions: `Flush` (run every
+  `stats_save_interval_seconds`) inserts and updates them and ends the silent ones.
+- The payload fields `P` and `C` are optional: links made before they existed still decode and are simply not counted.
+- Privacy is settings, not code: `stats_ip_mode` (masked by default), the mask bits, the player name, the forwarded-address header.
+  Anything that records an address must go through `Tracker.Addr` so they apply.
+- Stats use no permission of their own: everybody signed in gets `/api/stats*`, scoped with `owner(r)` like profiles (someone else's
+  profile id is a 404); the connection load is only sent to roles with `profiles.all`.
+- History limits are settings (`stats_history_*`) pruned by `Store.PruneActivity`; the tables follow their profile (`ON DELETE CASCADE`).
+
 ## Backend conventions
 
 - Go 1.26, `CGO_ENABLED=0`, `modernc.org/sqlite`. HTTP errors are JSON `{"error": "..."}` via `httpErr`.
@@ -161,7 +177,7 @@ go vet ./... && go test ./...
 
 ## Frontend conventions
 
-- Vue 3 SPA with history-mode routing. Pages: **Channels, Profiles, Sources, Health, Settings**, shown according to the user's permissions (plus `/setup` and `/login`); Settings has tabs **General** (`/settings`), **iptv-org** (`/settings/iptv-org`, also shows API sync and EPG grabber status), **Health**, **Proxy**, **Security** and **Users**. Filters, page and
+- Vue 3 SPA with history-mode routing. Pages: **Channels, Profiles, Stats, Sources, Health, Settings**, shown according to the user's permissions (plus `/setup` and `/login`); Settings has tabs **General** (`/settings`), **iptv-org** (`/settings/iptv-org`, also shows API sync and EPG grabber status), **Health**, **Proxy**, **Stats**, **Security** and **Users**. Filters, page and
   page size live in the URL so back/forward and shared links work. Live data arrives over the WebSocket (`src/ws.js`).
 - Modals are native `<dialog>`. Confirmations use `ask()` from `src/store.js` (destructive ones are red); never use
   `window.confirm`. Anything that deletes or removes asks first.

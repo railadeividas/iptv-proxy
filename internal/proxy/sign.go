@@ -20,6 +20,8 @@ type Payload struct {
 	A string `json:"a,omitempty"` // User-Agent to send upstream
 	E int64  `json:"e,omitempty"` // expiry, unix seconds
 	D bool   `json:"d,omitempty"` // U is a directory (DASH templates)
+	P int64  `json:"p,omitempty"` // profile the viewer plays from (statistics); links made before this existed have none
+	C string `json:"c,omitempty"` // channel key being watched (statistics)
 }
 
 type Signer struct{ key []byte }

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"iptv-proxy/internal/activity"
 	"iptv-proxy/internal/auth"
 	"iptv-proxy/internal/config"
 	"iptv-proxy/internal/epg"
@@ -33,6 +34,7 @@ type Server struct {
 	health *health.Checker
 	signer *proxy.Signer
 	hub    *events.Hub
+	act    *activity.Tracker
 	ui     fs.FS
 
 	loginMu  sync.Mutex
@@ -40,8 +42,13 @@ type Server struct {
 }
 
 func New(cfg config.Config, st *store.Store, set *settings.Settings, sy *isync.Syncer, px *proxy.Proxy, ep *epg.Manager, hc *health.Checker, signer *proxy.Signer, hub *events.Hub, ui fs.FS) *Server {
-	return &Server{cfg: cfg, st: st, set: set, sync: sy, px: px, epg: ep, health: hc, signer: signer, hub: hub, ui: ui, failures: map[string][]time.Time{}}
+	act := activity.New(st, set)
+	px.Observe = func(r *http.Request, pl proxy.Payload) (func(int), func()) { return act.Observe(r, pl.P, pl.C, pl.U) }
+	return &Server{cfg: cfg, st: st, set: set, sync: sy, px: px, epg: ep, health: hc, signer: signer, hub: hub, act: act, ui: ui, failures: map[string][]time.Time{}}
 }
+
+// Activity is the tracker of who uses the player links; main runs it (it saves running sessions).
+func (s *Server) Activity() *activity.Tracker { return s.act }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -83,6 +90,11 @@ func (s *Server) Handler() http.Handler {
 	api("POST /api/profiles/{id}/add", s.addChannels)
 	api("POST /api/profiles/{id}/remove", s.removeChannels)
 	api("PUT /api/profiles/{id}/channels", s.replaceChannels)
+
+	api("GET /api/stats", s.statsOverview)
+	api("GET /api/stats/channels", s.statsChannels)
+	api("GET /api/stats/clients", s.statsClients)
+	api("GET /api/stats/sessions", s.statsSessions)
 
 	perm(auth.Health, "GET /api/health", s.healthDetails)
 	perm(auth.Health, "POST /api/health/run", s.healthRun)

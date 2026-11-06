@@ -22,7 +22,7 @@ type Option struct {
 // drives validation, storage and the Settings pages.
 type Def struct {
 	Key     string   `json:"key"`
-	Group   string   `json:"group"`   // Settings tab: general, iptv-org, health, proxy, security
+	Group   string   `json:"group"`   // Settings tab: general, iptv-org, health, proxy, stats, security
 	Section string   `json:"section"` // heading inside the tab
 	Label   string   `json:"label"`
 	Help    string   `json:"help"`
@@ -126,6 +126,35 @@ var Defs = []Def{
 	{Key: "ua_browser", Group: "proxy", Section: "User-Agents", Label: "Compatibility: browser", Kind: String,
 		Default: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"},
 	{Key: "ua_exoplayer", Group: "proxy", Section: "User-Agents", Label: "Compatibility: ExoPlayer", Kind: String, Default: "ExoPlayerLib/2.19.1"},
+
+	// ---- Stats ----
+	{Key: "stats_enabled", Group: "stats", Section: "Recording", Label: "Record activity", Kind: Enum, Default: "on",
+		Options: []Option{{"on", "On"}, {"off", "Off"}},
+		Help:    "Who fetches playlists and guides, what is watched through the proxy and what players are sent to directly. Turning it off stops recording; what is already stored stays until it expires."},
+	{Key: "stats_ip_mode", Group: "stats", Section: "Privacy", Label: "Client addresses", Kind: Enum, Default: "masked",
+		Options: []Option{{"masked", "Mask the end of the address"}, {"full", "Store the full address"}, {"none", "Do not store addresses"}},
+		Help:    "Masked addresses keep only the first part (set below), so devices on the same network look alike. Applies to what is recorded from now on."},
+	{Key: "stats_mask_ipv4_bits", Group: "stats", Section: "Privacy", Label: "Keep of an IPv4 address", Kind: Int, Unit: "bits", Default: 24, Min: 1, Max: 32,
+		Help: "24 keeps 192.168.1 and hides the last number. Used when addresses are masked."},
+	{Key: "stats_mask_ipv6_bits", Group: "stats", Section: "Privacy", Label: "Keep of an IPv6 address", Kind: Int, Unit: "bits", Default: 48, Min: 1, Max: 128,
+		Help: "Used when addresses are masked."},
+	{Key: "stats_store_user_agent", Group: "stats", Section: "Privacy", Label: "Record the player name", Kind: Enum, Default: "on",
+		Options: []Option{{"on", "On"}, {"off", "Off"}},
+		Help:    "The User-Agent a player sends, for example VLC or ExoPlayer. It tells devices apart."},
+	{Key: "stats_forwarded_header", Group: "stats", Section: "Privacy", Label: "Address header behind a reverse proxy", Kind: String, Default: "", Blank: true,
+		Help: "Leave empty to use the address the connection comes from. Behind a reverse proxy every viewer would show the proxy's address: set the header it adds, for example X-Forwarded-For (the first address in it is used) or X-Real-IP. Only set it when the proxy always writes that header, because a client could send it itself."},
+	{Key: "stats_live_seconds", Group: "stats", Section: "Watching now", Label: "Still watching for", Kind: Int, Unit: "seconds", Default: 30, Min: 5, Max: 600,
+		Help: "A viewer counts as watching until nothing was requested for this long. Players ask for a new piece of video every few seconds."},
+	{Key: "stats_session_idle_seconds", Group: "stats", Section: "Watching now", Label: "A session ends after", Kind: Int, Unit: "seconds", Default: 300, Min: 30, Max: 86400,
+		Help: "Silence for this long ends a viewing session. The same device opening the same channel later starts a new one."},
+	{Key: "stats_save_interval_seconds", Group: "stats", Section: "Watching now", Label: "Save running sessions every", Kind: Int, Unit: "seconds", Default: 10, Min: 2, Max: 300,
+		Help: "How often the numbers of running sessions are written to the database. The Stats page is at most this much behind."},
+	{Key: "stats_history_days", Group: "stats", Section: "History", Label: "Keep history for", Kind: Int, Unit: "days", Default: 30, Min: 1, Max: 3650,
+		Help: "Sessions and devices not seen for this long are deleted, even when the limits below are not reached."},
+	{Key: "stats_history_sessions", Group: "stats", Section: "History", Label: "Sessions to keep", Kind: Int, Default: 100000, Min: 0, Max: 10000000,
+		Help: "The most sessions stored. When it is exceeded the oldest are deleted first. 0 keeps none: only what is watching now is shown."},
+	{Key: "stats_history_clients", Group: "stats", Section: "History", Label: "Devices to keep", Kind: Int, Default: 5000, Min: 0, Max: 1000000,
+		Help: "The most devices (an address and player name per profile) stored. The ones seen longest ago are deleted first. 0 keeps none."},
 
 	// ---- Security ----
 	{Key: "password_min_length", Group: "security", Section: "Sign-in", Label: "Shortest password", Kind: Int, Unit: "characters", Default: 8, Min: 4, Max: 64},

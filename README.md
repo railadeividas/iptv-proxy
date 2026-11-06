@@ -77,6 +77,7 @@ in Settings so the generated links use it.
 |---|---|
 | **Channels** | The catalogue. Search; filter by country, category, language, source, *Working only* (also partly working), *In a profile*, *Show NSFW*; sort by name, country, status or stream count. Tick rows (a page, or *all N matching*) and add them to a profile in one go. Click a row for its details: country, categories, languages, network, website, guide sources, every stream with its last result, and the stored check history. Your filters are remembered while you move between pages. |
 | **Profiles** | One playlist for one player or person. Rename, choose the delivery mode and a compatibility User-Agent, regenerate the token, and manage the channels: reorder (drag or arrows), rename a channel, set its guide ID, prefer a stream, override its delivery mode, remove it. Changes are saved with the sticky save bar. |
+| **Stats** | Who uses your links: who is watching right now (channel, profile, device, data so far), the load on the proxy, totals for the last day, week, month or everything stored, a table per profile (last seen, devices, playlist and guide fetches, sessions, data, time watched) and lists of sessions, channels and devices. Everyone sees their own profiles; admins and the superuser see everybody's. See [Stats and privacy](#stats-and-privacy). |
 | **Sources** | Your own playlists: add an M3U by URL, file or pasted text, edit it in a modal, refresh it, let URL sources refresh by themselves. Below them, **Skipped entries**: lines the importer could not use, with the reason, filterable by reason and source. |
 | **Health** | The health checker (see below). |
 | **Settings** | Superuser only: every tunable value, grouped in tabs (see [Configuration](#configuration)). |
@@ -176,6 +177,7 @@ Settings live in the database (the `/data` volume).
 | **iptv-org** | API address, sync interval and download limit, guide interval, parallel downloads, days of programmes, timeout and the wait after profile changes; also the sync and guide status, with a button to run each now |
 | **Health** | Which streams to check and how often, failed checks in a row, retry time, when to stop checking a failing stream, quiet hours, history limits, parallel checks (in total and per server, default 1 per server), timeouts, User-Agent |
 | **Proxy** | Most streams at once, upstream timeouts, how long proxy links stay valid, manifest and segment-cache limits, default and compatibility User-Agents |
+| **Stats** | Whether activity is recorded, privacy (how much of an address is kept, the player name, the reverse-proxy header), how long a viewer counts as watching, when a session ends, how often running sessions are saved, how much history to keep |
 | **Security** | How long you stay signed in, failed sign-in limit and window, shortest password |
 | **Users** | Create, edit and delete users and make admins |
 
@@ -183,6 +185,23 @@ Only deployment paths are command-line flags, with the image's defaults: `-liste
 
 Open endpoints: `/healthz`, `/p/{token}/…` (the playlist, guide and channel links, protected by the profile token) and `/x/…`
 (signed proxy links). Everything else is the admin UI and API behind sign-in.
+
+## Stats and privacy
+
+The **Stats** page is fed by the player links themselves, so it needs no player setup:
+
+- **Playlist and guide fetches** show which devices use a profile and when each was last seen.
+- **Proxy mode**: a device watching a channel is one *session*. The proxy counts the data it sends and how long the device keeps asking
+  for video, so you see who is watching now, for how long and how much data it uses.
+- **Redirect mode**: the player is sent straight to the stream and never touches the proxy again, so only the redirect itself is
+  known (who, which channel, which server), not how long it was watched or how much data it used. Use proxy mode where you need that.
+
+Privacy comes first by default: client addresses are **masked** (an IPv4 address keeps its first 24 bits, `192.168.1.0/24`; IPv6 keeps
+48), so devices on the same network look alike. The Stats tab in Settings can store full addresses or none, stop recording the player name,
+and stop recording altogether. Behind a reverse proxy every viewer would show the proxy's address: set the header it adds (for example
+`X-Forwarded-For`) in the same tab. History is deleted after 30 days (and beyond the session and device limits), all adjustable.
+Stats are only counted from the moment this version runs: nothing earlier is known. Old proxy links keep working; viewers who started
+before an upgrade are counted from their next playlist or channel request.
 
 ## Upgrading
 

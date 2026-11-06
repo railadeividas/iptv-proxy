@@ -87,6 +87,8 @@ func run(cfg config.Config) error {
 
 	app := server.New(cfg, st, set, syncer, px, ep, hc, signer, hub, web.FS())
 	go app.Start(ctx)
+	statsDone := make(chan struct{})
+	go func() { app.Activity().Run(ctx); close(statsDone) }() // saves the running sessions when it ends
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
@@ -102,7 +104,13 @@ func run(cfg config.Config) error {
 		srv.Shutdown(sctx)
 	}()
 	slog.Info("listening", "version", version.String(), "addr", cfg.Addr, "data", cfg.DataDir)
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	err = srv.ListenAndServe()
+	stop()
+	select { // let the last sessions reach the database before it closes
+	case <-statsDone:
+	case <-time.After(5 * time.Second):
+	}
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil

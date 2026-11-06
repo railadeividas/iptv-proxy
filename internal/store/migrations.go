@@ -56,4 +56,33 @@ var migrations = []migration{
 		_, err := tx.Exec(`ALTER TABLE health_rounds ADD COLUMN t_excluded INTEGER NOT NULL DEFAULT 0`)
 		return err
 	}},
+	{name: "add activity_clients and activity_sessions: who fetches playlists and what is watched", up: func(tx *sql.Tx) error {
+		// activity_clients: one row per device (address + user agent) per profile, with lifetime counters.
+		// activity_sessions: one row per watch session (a proxied viewer, or one redirect), saved while it runs.
+		// Both follow their profile when it is deleted. Addresses are stored as the privacy settings allow.
+		for _, q := range []string{
+			`CREATE TABLE activity_clients(
+				id INTEGER PRIMARY KEY,
+				profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+				ip TEXT NOT NULL DEFAULT '', ua TEXT NOT NULL DEFAULT '',
+				first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL,
+				playlists INTEGER NOT NULL DEFAULT 0, guides INTEGER NOT NULL DEFAULT 0, plays INTEGER NOT NULL DEFAULT 0,
+				UNIQUE(profile_id, ip, ua))`,
+			`CREATE INDEX activity_clients_seen ON activity_clients(last_seen)`,
+			`CREATE TABLE activity_sessions(
+				id INTEGER PRIMARY KEY,
+				profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+				ck TEXT NOT NULL, mode TEXT NOT NULL, host TEXT NOT NULL DEFAULT '',
+				ip TEXT NOT NULL DEFAULT '', ua TEXT NOT NULL DEFAULT '',
+				started INTEGER NOT NULL, last INTEGER NOT NULL,
+				bytes INTEGER NOT NULL DEFAULT 0, requests INTEGER NOT NULL DEFAULT 0)`,
+			`CREATE INDEX activity_sessions_started ON activity_sessions(started)`,
+			`CREATE INDEX activity_sessions_profile ON activity_sessions(profile_id, started)`,
+		} {
+			if _, err := tx.Exec(q); err != nil {
+				return err
+			}
+		}
+		return nil
+	}},
 }
