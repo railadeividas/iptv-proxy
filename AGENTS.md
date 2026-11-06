@@ -183,7 +183,16 @@ go vet ./... && go test ./...
 
 - `.github/dependabot.yml` watches Go modules, `web/` (npm), the Dockerfile base images and the GitHub Actions, weekly, grouped.
   When you add another place that pins versions (a new directory with a `package.json`, another Dockerfile, …) add it there too.
-- `ci.yml` (vet, tests, UI build) runs on every pull request; `release.yml` publishes the image on `v*` tags and weekly.
+- **Node follows the current LTS automatically**: the `Dockerfile` uses `node:lts-alpine` (both stages) and CI uses `lts/*`, so nothing to
+  bump by hand and never an end-of-life odd release. A new LTS arrives in October; the weekly rebuild then moves to it, and the UI build
+  inside the image (and CI) fails before anything is published if it breaks, and so does the EPG grabber smoke test (below).
+  Go is pinned to one patch in `go.mod` and the `Dockerfile`: bump both together.
+- **EPG grabber tests.** `internal/epg/grab_test.go` runs `doGrab` against a fake `npm` (command line, channel file, settings read at use,
+  a failed or broken grab keeps the last good guide). `scripts/epg-smoke.sh` runs the real iptv-org/epg inside the built image against a local
+  fixture site, with no internet: every option we pass must still exist (the grabber follows its `master` branch) and a grab must produce
+  valid XMLTV. CI runs it in the `epg-grabber` job, so it also gates `release.yml`. If you change how the grabber is called in
+  `internal/epg`, change both.
+- `ci.yml` (vet, tests, govulncheck, UI build, the `epg-grabber` image test) runs on every pull request; `release.yml` publishes the image on `v*` tags and weekly.
 
 ## License
 
