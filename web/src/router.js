@@ -19,7 +19,7 @@ export const router = createRouter({
       children: [
         { path: '', name: 'settings', component: () => import('./components/SettingsPanel.vue'), props: { group: 'general' } },
         { path: 'users', name: 'settings-users', component: () => import('./components/UsersPanel.vue') },
-        { path: ':group(iptv-org|health|proxy|stats|security)', name: 'settings-group', component: () => import('./components/SettingsPanel.vue'), props: true },
+        { path: ':group(iptv-org|health|proxy|stats|metrics|security)', name: 'settings-group', component: () => import('./components/SettingsPanel.vue'), props: true },
       ],
     },
     { path: '/:rest(.*)*', redirect: '/channels' },

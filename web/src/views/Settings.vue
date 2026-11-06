@@ -4,6 +4,7 @@ const TABS = [
   { group: 'health', label: 'Health' },
   { group: 'proxy', label: 'Proxy' },
   { group: 'stats', label: 'Stats' },
+  { group: 'metrics', label: 'Metrics' },
   { group: 'security', label: 'Security' },
 ]
 </script>

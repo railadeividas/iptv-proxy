@@ -217,6 +217,9 @@ func validate(d Def, v any) (any, string) {
 		if len(str) > 500 {
 			return nil, "too long"
 		}
+		if d.Kind == String && d.Min > 0 && len(str) < d.Min {
+			return nil, fmt.Sprintf("use at least %d characters", d.Min)
+		}
 		if d.Kind == URL {
 			if u, err := url.Parse(str); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 				return nil, "must look like http://192.168.1.10:8810"

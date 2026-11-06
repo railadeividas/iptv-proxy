@@ -31,7 +31,22 @@ const (
 	liveCapacity = 4096             // sessions kept in memory at most; a flood of addresses cannot grow it without bound
 )
 
+// counters only grow (until the app restarts); the metrics endpoint reports them.
+type counters struct {
+	playlists, guides, proxy, redirect, bytes atomic.Int64
+}
+
+// Counters is a copy of the counters of one profile, or of all of them.
+type Counters struct {
+	Playlists, Guides, Proxy, Redirect, Bytes int64
+}
+
+func (c *counters) snapshot() Counters {
+	return Counters{c.playlists.Load(), c.guides.Load(), c.proxy.Load(), c.redirect.Load(), c.bytes.Load()}
+}
+
 type session struct {
+	tot, all           *counters // the profile's and the overall counters
 	profileID, ownerID int64
 	profile            string
 	ck, mode, host     string
@@ -57,6 +72,8 @@ type Tracker struct {
 
 	mu   sync.Mutex
 	live map[string]*session
+	per  map[int64]*counters
+	all  counters
 
 	flushMu   sync.Mutex
 	lastPrune time.Time
@@ -64,7 +81,7 @@ type Tracker struct {
 }
 
 func New(st *store.Store, set *settings.Settings) *Tracker {
-	t := &Tracker{st: st, set: set, live: map[string]*session{}}
+	t := &Tracker{st: st, set: set, live: map[string]*session{}, per: map[int64]*counters{}}
 	set.OnChange(func(keys []string) {
 		for _, k := range keys {
 			if strings.HasPrefix(k, "stats_history_") {
@@ -131,9 +148,43 @@ func (t *Tracker) Agent(r *http.Request) string {
 	return strings.ToValidUTF8(ua, "")
 }
 
+// profile returns the counters of a profile; the caller holds t.mu.
+func (t *Tracker) profile(id int64) *counters {
+	c := t.per[id]
+	if c == nil {
+		c = &counters{}
+		t.per[id] = c
+	}
+	return c
+}
+
+// Counters returns the overall counters and those of each profile that has any.
+func (t *Tracker) Counters() (Counters, map[int64]Counters) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	per := make(map[int64]Counters, len(t.per))
+	for id, c := range t.per {
+		per[id] = c.snapshot()
+	}
+	return t.all.snapshot(), per
+}
+
 // Client counts a playlist or guide request ("playlist" or "guide") of a profile.
 func (t *Tracker) Client(r *http.Request, profileID int64, kind string) {
-	if !t.enabled() || t.set.Int("stats_history_clients") == 0 {
+	if !t.enabled() {
+		return
+	}
+	t.mu.Lock()
+	pc := t.profile(profileID)
+	t.mu.Unlock()
+	if kind == "guide" {
+		pc.guides.Add(1)
+		t.all.guides.Add(1)
+	} else {
+		pc.playlists.Add(1)
+		t.all.playlists.Add(1)
+	}
+	if t.set.Int("stats_history_clients") == 0 {
 		return
 	}
 	t.st.TouchClient(profileID, t.Addr(r), t.Agent(r), kind, time.Now().Unix())
@@ -150,6 +201,8 @@ func (l *Live) Add(n int) {
 		return
 	}
 	l.s.bytes.Add(int64(n))
+	l.s.tot.bytes.Add(int64(n))
+	l.s.all.bytes.Add(int64(n))
 	l.s.last.Store(time.Now().UnixNano())
 }
 
@@ -198,8 +251,15 @@ func (t *Tracker) Begin(r *http.Request, profileID int64, p *store.Profile, ck, 
 			t.mu.Unlock()
 			return nil
 		}
-		s = &session{profileID: profileID, ownerID: p.OwnerID, profile: p.Name, ck: ck, mode: mode, host: host, ip: ip, ua: ua, started: now.Unix()}
+		s = &session{tot: t.profile(profileID), all: &t.all, profileID: profileID, ownerID: p.OwnerID, profile: p.Name, ck: ck, mode: mode, host: host, ip: ip, ua: ua, started: now.Unix()}
 		t.live[key] = s
+		if mode == Redirect {
+			s.tot.redirect.Add(1)
+			s.all.redirect.Add(1)
+		} else {
+			s.tot.proxy.Add(1)
+			s.all.proxy.Add(1)
+		}
 	}
 	if s.host == "" {
 		s.host = host

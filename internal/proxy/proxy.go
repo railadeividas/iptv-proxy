@@ -40,6 +40,8 @@ type Proxy struct {
 	inUse  atomic.Int64 // open proxied connections
 	cache  *segCache
 
+	upstreamOK, upstreamErr atomic.Uint64 // requests to streams that worked / failed (not counting players that left)
+
 	// Observe, when set, is told about every proxied request that carries a profile (see Payload.P). It returns
 	// what to call with each number of bytes written to the player and when the request is over. Set it before serving.
 	Observe func(r *http.Request, pl Payload) (add func(n int), done func())
@@ -129,9 +131,35 @@ func isManifestPath(p string) bool {
 	return strings.HasSuffix(p, ".m3u8") || strings.HasSuffix(p, ".m3u") || strings.HasSuffix(p, ".mpd")
 }
 
+// Stats are the proxy's numbers for the metrics endpoint.
+type Stats struct {
+	InUse, Limit               int
+	CacheEntries               int
+	CacheBytes, CacheLimit     int64
+	CacheHits, CacheMisses     uint64
+	UpstreamOK, UpstreamErrors uint64
+}
+
+func (p *Proxy) Stats() Stats {
+	n, b := p.cache.usage()
+	return Stats{InUse: p.InUse(), Limit: p.set.Int("max_connections"), CacheEntries: n, CacheBytes: int64(b), CacheLimit: p.set.MB("segment_cache_mb"),
+		CacheHits: p.cache.hits.Load(), CacheMisses: p.cache.misses.Load(), UpstreamOK: p.upstreamOK.Load(), UpstreamErrors: p.upstreamErr.Load()}
+}
+
 // Open requests the upstream URL with the payload's headers. Errors (including
 // HTTP >= 400 and HTML responses) let callers fall back to another stream.
 func (p *Proxy) Open(ctx context.Context, in *http.Request, pl Payload) (*Upstream, error) {
+	up, err := p.open(ctx, in, pl)
+	switch {
+	case err == nil:
+		p.upstreamOK.Add(1)
+	case ctx.Err() == nil: // a player that left is not the stream's fault
+		p.upstreamErr.Add(1)
+	}
+	return up, err
+}
+
+func (p *Proxy) open(ctx context.Context, in *http.Request, pl Payload) (*Upstream, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pl.U, nil) // HEAD is answered via GET
 	if err != nil {
 		return nil, err

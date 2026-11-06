@@ -39,12 +39,15 @@ type Server struct {
 
 	loginMu  sync.Mutex
 	failures map[string][]time.Time
+
+	reqMu sync.Mutex
+	reqs  map[reqKey]uint64 // requests by kind and status, for /metrics
 }
 
 func New(cfg config.Config, st *store.Store, set *settings.Settings, sy *isync.Syncer, px *proxy.Proxy, ep *epg.Manager, hc *health.Checker, signer *proxy.Signer, hub *events.Hub, ui fs.FS) *Server {
 	act := activity.New(st, set)
 	px.Observe = func(r *http.Request, pl proxy.Payload) (func(int), func()) { return act.Observe(r, pl.P, pl.C, pl.U) }
-	return &Server{cfg: cfg, st: st, set: set, sync: sy, px: px, epg: ep, health: hc, signer: signer, hub: hub, act: act, ui: ui, failures: map[string][]time.Time{}}
+	return &Server{cfg: cfg, st: st, set: set, sync: sy, px: px, epg: ep, health: hc, signer: signer, hub: hub, act: act, ui: ui, failures: map[string][]time.Time{}, reqs: map[reqKey]uint64{}}
 }
 
 // Activity is the tracker of who uses the player links; main runs it (it saves running sessions).
@@ -55,6 +58,7 @@ func (s *Server) Handler() http.Handler {
 
 	// open: health and player endpoints (token / signature protected)
 	mux.HandleFunc("GET /healthz", s.healthz)
+	mux.HandleFunc("GET /metrics", s.metrics) // off, or behind a token, per the Metrics settings
 	mux.HandleFunc("GET /p/{token}/playlist.m3u", s.playlist)
 	mux.HandleFunc("GET /p/{token}/epg.xml", s.guide(false))
 	mux.HandleFunc("GET /p/{token}/epg.xml.gz", s.guide(true))
@@ -171,6 +175,7 @@ func (s *Server) logging(next http.Handler) http.Handler {
 		start := time.Now()
 		sw := &statusWriter{ResponseWriter: w, code: 200}
 		next.ServeHTTP(sw, r)
+		s.countRequest(r.URL.Path, sw.code)
 		if r.URL.Path == "/healthz" {
 			return
 		}

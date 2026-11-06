@@ -42,7 +42,7 @@ and say so instead of making it.
 - **Settings.** Stored as `setting.<key>` rows in `meta`. Renaming a key, removing one or changing what its value means needs a
   migration that converts the stored value; a new setting needs a safe default; narrowing a min/max must not leave stored values
   invalid (clamp them in a migration).
-- **Deployment.** The `-listen`, `-data`, `-epg` flags and their defaults, the `/data` layout, `/healthz`, the port, and "no
+- **Deployment.** The `-listen`, `-data`, `-epg` flags and their defaults, the `/data` layout, `/healthz`, the port, `/metrics` (when on), and "no
   environment variables". The only subcommand is `reset-password` (`cmd/server/resetpw.go`), the recovery path for a lost superuser
   password; keep it working, and don't add other subcommands or flags.
 - **Sign-in data.** Password hashes carry their own parameters (`internal/auth`), so you can raise the cost without invalidating
@@ -162,6 +162,18 @@ go vet ./... && go test ./...
   profile id is a 404); the connection load is only sent to roles with `profiles.all`.
 - History limits are settings (`stats_history_*`) pruned by `Store.PruneActivity`; the tables follow their profile (`ON DELETE CASCADE`).
 
+## Metrics
+
+- `/metrics` (`internal/server/metrics.go`, text format by hand in `internal/metrics`, no dependency) is **off by default**; the settings
+  `metrics_enabled`, `metrics_access` (token or open), `metrics_token` (at least 16 characters; empty refuses everyone) and the detail
+  switches decide. Disabled is a 404. Never log or expose the token; compare it in constant time.
+- **Metric names and labels are a contract** like the player URLs: dashboards and alerts depend on them. Add new ones freely; renaming or
+  removing one needs the old name kept for a release, and a note in the release notes.
+- Keep cardinality bounded: labels are profile, mode, state, source, host and the channels being watched right now. Never label by
+  client address, user agent, token, stream URL or an individual stream. Counters are in memory and reset on restart.
+- Numbers are read at scrape time from the components (`Proxy.Stats`, `activity.Tracker.Counters/Now`, `health.Details`, store
+  queries in `internal/store/metrics.go`). A new metric needs a line in `TestMetricsEndpoint` (it also checks the format).
+
 ## Backend conventions
 
 - Go 1.26, `CGO_ENABLED=0`, `modernc.org/sqlite`. HTTP errors are JSON `{"error": "..."}` via `httpErr`.
@@ -177,7 +189,7 @@ go vet ./... && go test ./...
 
 ## Frontend conventions
 
-- Vue 3 SPA with history-mode routing. Pages: **Channels, Profiles, Stats, Sources, Health, Settings**, shown according to the user's permissions (plus `/setup` and `/login`); Settings has tabs **General** (`/settings`), **iptv-org** (`/settings/iptv-org`, also shows API sync and EPG grabber status), **Health**, **Proxy**, **Stats**, **Security** and **Users**. Filters, page and
+- Vue 3 SPA with history-mode routing. Pages: **Channels, Profiles, Stats, Sources, Health, Settings**, shown according to the user's permissions (plus `/setup` and `/login`); Settings has tabs **General** (`/settings`), **iptv-org** (`/settings/iptv-org`, also shows API sync and EPG grabber status), **Health**, **Proxy**, **Stats**, **Metrics**, **Security** and **Users**. Filters, page and
   page size live in the URL so back/forward and shared links work. Live data arrives over the WebSocket (`src/ws.js`).
 - Modals are native `<dialog>`. Confirmations use `ask()` from `src/store.js` (destructive ones are red); never use
   `window.confirm`. Anything that deletes or removes asks first.

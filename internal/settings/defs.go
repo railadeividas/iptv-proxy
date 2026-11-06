@@ -22,7 +22,7 @@ type Option struct {
 // drives validation, storage and the Settings pages.
 type Def struct {
 	Key     string   `json:"key"`
-	Group   string   `json:"group"`   // Settings tab: general, iptv-org, health, proxy, stats, security
+	Group   string   `json:"group"`   // Settings tab: general, iptv-org, health, proxy, stats, metrics, security
 	Section string   `json:"section"` // heading inside the tab
 	Label   string   `json:"label"`
 	Help    string   `json:"help"`
@@ -155,6 +155,22 @@ var Defs = []Def{
 		Help: "The most sessions stored. When it is exceeded the oldest are deleted first. 0 keeps none: only what is watching now is shown."},
 	{Key: "stats_history_clients", Group: "stats", Section: "History", Label: "Devices to keep", Kind: Int, Default: 5000, Min: 0, Max: 1000000,
 		Help: "The most devices (an address and player name per profile) stored. The ones seen longest ago are deleted first. 0 keeps none."},
+
+	// ---- Metrics ----
+	{Key: "metrics_enabled", Group: "metrics", Section: "Prometheus", Label: "Metrics endpoint", Kind: Enum, Default: "off",
+		Options: []Option{{"off", "Off"}, {"on", "On"}},
+		Help:    "Serves /metrics for Prometheus: proxy load, who is watching, stream health, sync and guide status, per profile. While it is off, /metrics does not exist (404)."},
+	{Key: "metrics_access", Group: "metrics", Section: "Prometheus", Label: "Access", Kind: Enum, Default: "token",
+		Options: []Option{{"token", "Require the token below"}, {"open", "Open: no authentication"}},
+		Help:    "Open means anyone who can reach this port can read profile names, the channels being watched and the stream servers. Use it only on a private network, or behind a reverse proxy that restricts /metrics."},
+	{Key: "metrics_token", Group: "metrics", Section: "Prometheus", Label: "Token", Kind: String, Default: "", Blank: true, Min: 16,
+		Help: "Prometheus sends it as the header Authorization: Bearer <token> (authorization: credentials: in its scrape config). At least 16 characters; for example the output of: openssl rand -hex 24. While it is empty, /metrics refuses every request."},
+	{Key: "metrics_profile_labels", Group: "metrics", Section: "Detail", Label: "Series per profile", Kind: Enum, Default: "on",
+		Options: []Option{{"on", "On"}, {"off", "Off"}},
+		Help:    "Adds the name and owner of each profile as labels (sessions, data, devices, channels by state). Off leaves only the totals."},
+	{Key: "metrics_channel_viewers", Group: "metrics", Section: "Detail", Label: "Viewers per channel", Kind: Enum, Default: "on",
+		Options: []Option{{"on", "On"}, {"off", "Off"}},
+		Help:    "One series for each channel somebody is watching right now (it disappears when they stop). Off leaves only the totals."},
 
 	// ---- Security ----
 	{Key: "password_min_length", Group: "security", Section: "Sign-in", Label: "Shortest password", Kind: Int, Unit: "characters", Default: 8, Min: 4, Max: 64},

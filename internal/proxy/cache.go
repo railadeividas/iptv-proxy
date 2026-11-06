@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"iptv-proxy/internal/settings"
@@ -20,6 +21,8 @@ type segCache struct {
 	m    map[string]cached
 	size int
 	set  *settings.Settings // size and lifetime are read live
+
+	hits, misses atomic.Uint64
 }
 
 func newSegCache(set *settings.Settings) *segCache {
@@ -33,8 +36,10 @@ func (c *segCache) get(k string) (cached, bool) {
 	defer c.mu.Unlock()
 	v, ok := c.m[k]
 	if !ok || time.Now().After(v.expires) {
+		c.misses.Add(1)
 		return cached{}, false
 	}
+	c.hits.Add(1)
 	return v, true
 }
 
@@ -63,4 +68,11 @@ func (c *segCache) put(k string, v cached) {
 	v.expires = now.Add(ttl)
 	c.m[k] = v
 	c.size += len(v.data)
+}
+
+// usage is what the cache holds now.
+func (c *segCache) usage() (entries, bytes int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.m), c.size
 }

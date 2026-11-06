@@ -178,12 +178,13 @@ Settings live in the database (the `/data` volume).
 | **Health** | Which streams to check and how often, failed checks in a row, retry time, when to stop checking a failing stream, quiet hours, history limits, parallel checks (in total and per server, default 1 per server), timeouts, User-Agent |
 | **Proxy** | Most streams at once, upstream timeouts, how long proxy links stay valid, manifest and segment-cache limits, default and compatibility User-Agents |
 | **Stats** | Whether activity is recorded, privacy (how much of an address is kept, the player name, the reverse-proxy header), how long a viewer counts as watching, when a session ends, how often running sessions are saved, how much history to keep |
+| **Metrics** | Whether `/metrics` is served (off by default), whether it needs a token or is open, the token, and whether to add a series per profile and per watched channel |
 | **Security** | How long you stay signed in, failed sign-in limit and window, shortest password |
 | **Users** | Create, edit and delete users and make admins |
 
 Only deployment paths are command-line flags, with the image's defaults: `-listen :8810`, `-data /data`, `-epg /opt/epg`.
 
-Open endpoints: `/healthz`, `/p/{token}/…` (the playlist, guide and channel links, protected by the profile token) and `/x/…`
+Open endpoints: `/healthz`, `/metrics` (only when switched on, see [Metrics](#metrics-prometheus)), `/p/{token}/…` (the playlist, guide and channel links, protected by the profile token) and `/x/…`
 (signed proxy links). Everything else is the admin UI and API behind sign-in.
 
 ## Stats and privacy
@@ -202,6 +203,35 @@ and stop recording altogether. Behind a reverse proxy every viewer would show th
 `X-Forwarded-For`) in the same tab. History is deleted after 30 days (and beyond the session and device limits), all adjustable.
 Stats are only counted from the moment this version runs: nothing earlier is known. Old proxy links keep working; viewers who started
 before an upgrade are counted from their next playlist or channel request.
+
+## Metrics (Prometheus)
+
+`/metrics` serves the Prometheus text format. It is **off by default** (Settings > Metrics); while it is off the URL does not exist (404).
+Access is a setting too: **Require the token** (default) or **Open**. With a token, Prometheus sends `Authorization: Bearer <token>`;
+until a token of at least 16 characters is set, every request is refused, so switching the endpoint on cannot expose it by accident.
+Open means anyone who can reach the port can read profile names, the channels being watched and the stream servers: use it on a
+private network or restrict `/metrics` in the reverse proxy.
+
+```yaml
+scrape_configs:
+  - job_name: iptv
+    authorization: { credentials: "<your token>" }   # leave out when access is Open
+    static_configs: [{ targets: ["iptv.example.com:8810"] }]   # add scheme: https behind TLS
+```
+
+| Area | Metrics (all `iptv_…` unless noted) |
+|---|---|
+| **Viewers** | `sessions_active{mode}`, `sessions_started_total{mode}`, `bytes_sent_total`, `playlist_fetches_total`, `guide_fetches_total`, `stream_host_viewers{host,mode}`, `channel_viewers{ck,name,mode}` (one per channel being watched now) |
+| **Per profile** (labels `profile`, `profile_id`, `owner`) | `profile_info{mode,compat}`, `profile_channels`, `profile_channels_by_state{state}`, `profile_clients`, `profile_last_seen_timestamp_seconds`, `profile_playlist_fetches_total`, `profile_guide_fetches_total`, `profile_sessions_started_total{mode}`, `profile_sessions_active{mode}`, `profile_bytes_sent_total` |
+| **Proxy** | `proxy_connections`, `proxy_connections_limit`, `proxy_upstream_requests_total{result}`, `proxy_cache_bytes`, `proxy_cache_limit_bytes`, `proxy_cache_entries`, `proxy_cache_hits_total`, `proxy_cache_misses_total` |
+| **Health** | `streams{state}`, `channels_by_state{state}`, `source_streams{source,kind,state}`, `channels_in_profiles_down`, `health_running`, `health_paused`, `health_quiet_hours`, `health_streams_due`, `health_next_check_timestamp_seconds`, `health_round_done`, `health_round_total`, `health_last_round_*`, `health_streams_by_last_check{age}`, `health_history_rounds`, `health_history_checks` |
+| **Catalogue, guide, sources** | `catalogue_channels`, `catalogue_streams`, `skipped_entries`, `custom_sources`, `custom_source_*{source,source_id}`, `sync_last_success_timestamp_seconds`, `sync_running`, `sync_failed`, `epg_*` (enabled, running, failed, last success, channels, unmapped), `ready` |
+| **App** | `build_info{version,go_version}`, `start_time_seconds`, `users{role}`, `profiles`, `database_size_bytes`, `http_requests_total{route,code}`, `websocket_clients`, `stats_recording`, and `go_*` / `process_start_time_seconds` |
+
+Counters (`…_total`) live in memory and start from 0 when the app restarts, which Prometheus handles. Never labelled: client
+addresses, player names, users' tokens, stream addresses or individual streams. **Series per profile** and **Viewers per channel**
+can be switched off in the same tab, leaving only the totals. Useful alerts: `iptv_sync_failed == 1`, `time() - iptv_sync_last_success_timestamp_seconds > 172800`,
+`iptv_proxy_connections >= iptv_proxy_connections_limit`, `iptv_channels_in_profiles_down > 0`.
 
 ## Upgrading
 
