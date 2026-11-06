@@ -235,12 +235,27 @@ func (p *Proxy) Respond(w http.ResponseWriter, in *http.Request, up *Upstream, p
 	// Small, non-range responses are cached briefly so several viewers of the
 	// same channel share segments.
 	if in.Header.Get("Range") == "" && resp.StatusCode == 200 && resp.ContentLength > 0 && resp.ContentLength <= p.set.MB("segment_cache_item_max_mb") {
-		data, err := io.ReadAll(up.body)
-		w.Write(data)
-		if err == nil && int64(len(data)) == resp.ContentLength {
-			p.cache.put(cacheKey(up.Payload), cached{status: 200, ct: h.Get("Content-Type"), data: data})
+		// Stream to the player as the bytes arrive (a player reading at
+		// real-time speed must not wait for the whole segment), keeping a copy.
+		data := make([]byte, 0, resp.ContentLength)
+		rc := http.NewResponseController(w)
+		buf := make([]byte, 32<<10)
+		for {
+			n, err := up.body.Read(buf)
+			if n > 0 {
+				data = append(data, buf[:n]...)
+				if _, werr := w.Write(buf[:n]); werr != nil {
+					return
+				}
+				_ = rc.Flush()
+			}
+			if err != nil {
+				if err == io.EOF && int64(len(data)) == resp.ContentLength {
+					p.cache.put(cacheKey(up.Payload), cached{status: 200, ct: h.Get("Content-Type"), data: data})
+				}
+				return
+			}
 		}
-		return
 	}
 	streamCopy(w, up.body, resp.ContentLength < 0)
 }

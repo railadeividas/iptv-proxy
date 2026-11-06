@@ -145,3 +145,56 @@ func TestProxyEndToEnd(t *testing.T) {
 var upBase string
 
 func upURL(*http.Request) string { return upBase + "/live/index.m3u8" }
+
+// A segment must reach the player while the upstream is still sending it,
+// and a complete one must still land in the cache.
+func TestSegmentStreamedBeforeComplete(t *testing.T) {
+	release := make(chan struct{})
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/mp2t")
+		w.Header().Set("Content-Length", "10")
+		w.Write([]byte("01234"))
+		w.(http.Flusher).Flush()
+		<-release
+		w.Write([]byte("56789"))
+	}))
+	defer up.Close()
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	}()
+
+	set, signer := testSettings(t), NewSigner([]byte("0123456789abcdef0123456789abcdef"))
+	px := New(signer, set)
+	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pl := Payload{U: up.URL + "/seg.ts"}
+		o, err := px.Open(r.Context(), r, pl)
+		if err != nil {
+			http.Error(w, err.Error(), 502)
+			return
+		}
+		px.Respond(w, r, o, "http://proxy")
+	}))
+	defer front.Close()
+
+	resp, err := http.Get(front.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	first := make([]byte, 5)
+	if _, err := io.ReadFull(resp.Body, first); err != nil || string(first) != "01234" {
+		t.Fatalf("first bytes not streamed before upstream finished: %v %q", err, first)
+	}
+	close(release)
+	rest, _ := io.ReadAll(resp.Body)
+	if string(rest) != "56789" {
+		t.Fatalf("rest = %q", rest)
+	}
+	if _, ok := px.cache.get(cacheKey(Payload{U: up.URL + "/seg.ts"})); !ok {
+		t.Fatal("complete segment was not cached")
+	}
+}
