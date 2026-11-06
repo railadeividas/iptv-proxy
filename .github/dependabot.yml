@@ -1,23 +1,35 @@
+---
 version: 2
-
 updates:
-  # Actions used by .github/workflows/ci.yml (checkout, setup-python, setup-node).
+  # Go modules (go.mod / go.sum)
+  - package-ecosystem: gomod
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    commit-message: { prefix: "deps(go)" }
+    groups:
+      go-minor-and-patch:
+        update-types: [minor, patch]
+
+  # Vue admin UI (web/package.json / package-lock.json)
+  - package-ecosystem: npm
+    directory: /web
+    schedule: { interval: weekly, day: monday }
+    commit-message: { prefix: "deps(web)" }
+    groups:
+      web-minor-and-patch:
+        update-types: [minor, patch]
+
+  # Base images in the Dockerfile (node and golang build stages, node runtime)
+  - package-ecosystem: docker
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    commit-message: { prefix: "deps(docker)" }
+
+  # Actions used by the workflows in .github/workflows
   - package-ecosystem: github-actions
     directory: /
-    schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 5
+    schedule: { interval: weekly, day: monday }
+    commit-message: { prefix: "deps(ci)" }
     groups:
       actions:
         patterns: ["*"]
-    labels: [dependencies, github-actions]
-
-  # Base image in the Dockerfile (python:<version>-slim).
-  - package-ecosystem: docker
-    directory: /
-    schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 5
-    labels: [dependencies, docker]

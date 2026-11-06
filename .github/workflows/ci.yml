@@ -1,73 +1,23 @@
 name: CI
-
 on:
+  pull_request:
   push:
     branches: [main]
-  pull_request:
-  workflow_call:
-
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
-
-permissions:
-  contents: read
-
 jobs:
-  python:
-    name: Python tests (${{ matrix.python }})
+  test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ["3.12", "3.13"]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
-      - run: python -m unittest -v
-
-  frontend:
-    name: Frontend tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
-      - name: Syntax check
-        run: for f in app/static/*.js; do node --check "$f"; done
-      - name: Unit tests
-        run: node --test
-
-  docker:
-    name: Docker image
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build
-        run: docker build --build-arg VERSION=ci -t iptv-proxy .
-      - name: Start with the same hardening as compose.yaml
-        run: |
-          docker run -d --name iptv-proxy -p 3333:3333 --read-only --cap-drop ALL \
-            --security-opt no-new-privileges:true -v iptv-data:/data iptv-proxy
-      - name: Wait for health check
-        run: |
-          for i in $(seq 1 30); do
-            curl -fsS http://127.0.0.1:3333/healthz && exit 0
-            sleep 1
-          done
-          docker logs iptv-proxy
-          exit 1
-      - name: Smoke test
-        run: |
-          curl -fsS http://127.0.0.1:3333/ | grep -q "IPTV Proxy"
-          curl -fsS http://127.0.0.1:3333/main.js > /dev/null
-          curl -fsS http://127.0.0.1:3333/api/sources | grep -q '"version": "ci"'
-      - name: Container logs
-        if: always()
-        run: docker logs iptv-proxy
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci && npm run build
+        working-directory: web
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
+      - run: CGO_ENABLED=0 go build ./cmd/server

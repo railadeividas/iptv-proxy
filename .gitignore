@@ -1,5 +1,8 @@
-__pycache__/
-.env
-data/
-*.m3u
-*.m3u8
+.claude/worktrees/
+/data/
+/iptv-proxy
+*.db
+*.db-*
+web/node_modules/
+web/dist/*
+!web/dist/.gitkeep

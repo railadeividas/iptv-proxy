@@ -1,0 +1,77 @@
+:root {
+  color-scheme: light;
+  --bg:#f5f6f8; --panel:#fff; --line:#dde1e8; --text:#1b1f27; --muted:#586174;
+  --accent:#2f6df0; --ok:#1f9d63; --bad:#d64545; --warn:#b7791f;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --bg:#0f1115; --panel:#181b22; --line:#2a2f3a; --text:#e6e8ee; --muted:#8b93a5;
+    --accent:#4f8cff; --ok:#3ecf8e; --bad:#ef5b5b; --warn:#e5b04a;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg:#0f1115; --panel:#181b22; --line:#2a2f3a; --text:#e6e8ee; --muted:#8b93a5;
+  --accent:#4f8cff; --ok:#3ecf8e; --bad:#ef5b5b; --warn:#e5b04a;
+}
+:root[data-theme="light"] { color-scheme: light; }
+
+* { box-sizing: border-box; }
+/* always keep the vertical scrollbar track, even while a page is still empty or short, so the layout does not jump sideways when the scrollbar appears */
+html { overflow-y: scroll; }
+body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+a { color: inherit; text-decoration: none; }
+input, select, textarea, button { font: inherit; color: inherit; }
+/* one control height everywhere: inputs, selects and buttons */
+:root { --ctl: 36px; }
+input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]), select, button { height:var(--ctl); line-height:normal; }
+input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]), select { padding-top:0; padding-bottom:0; }
+button { display:inline-flex; align-items:center; justify-content:center; gap:6px; padding-top:0; padding-bottom:0; white-space:nowrap; }
+input:not([type=checkbox]):not([type=file]), select, textarea { background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:7px 10px; min-width:0; }
+textarea { width:100%; margin:0; font-family: ui-monospace, monospace; }
+button { border:1px solid var(--line); background:var(--panel); border-radius:6px; padding:6px 12px; cursor:pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+button.ghost { background:none; }
+button.danger { color: var(--bad); }
+button:disabled { opacity:.5; cursor:default; }
+h1,h2,h3 { margin:0 0 8px; } h2 { font-size:16px; }
+code { background:var(--bg); padding:1px 5px; border-radius:4px; }
+table { width:100%; border-collapse:collapse; font-size:13px; }
+td, th { text-align:left; padding:5px 8px; border-bottom:1px solid var(--line); }
+
+.muted { color: var(--muted); } .err { color: var(--bad); }
+/* cards that share a row always get the same height; .card-foot sticks to the bottom */
+.card-row { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap:16px; align-items:stretch; margin-bottom:16px; }
+.card-row > .card { margin-bottom:0; display:flex; flex-direction:column; }
+.card-row > .card > .card-foot { margin-top:auto; padding-top:8px; }
+.card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; }
+.card input:not([type=file]):not([type=checkbox]) { width:100%; margin:0; }
+.card > input:not([type=file]):not([type=checkbox]), .card > textarea { margin:0 0 10px; }
+input[type=file] { display:inline-flex; align-items:center; height:var(--ctl); padding:0; border:0; background:none; color:var(--muted); max-width:100%; }
+input[type=file]::file-selector-button { height:var(--ctl); padding:0 12px; margin-right:10px; border:1px solid var(--line); border-radius:6px; background:var(--panel); color:var(--text); font:inherit; cursor:pointer; }
+input[type=file]::file-selector-button:hover { border-color:var(--accent); }
+td { vertical-align:middle; }
+.row, .filters, .inline { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+.card .row input:not([type=file]) { width:auto; }
+.inline input, .row input:not([type=file]) { flex:1; }
+.filters input[type=search] { flex:1; min-width:200px; }
+.badge { font-size:11px; border:1px solid var(--line); padding:1px 6px; border-radius:4px; color:var(--muted); margin-left:6px; white-space:nowrap; }
+.badge.good { color:var(--ok); border-color:var(--ok); } .badge.bad { color:var(--bad); border-color:var(--bad); } .badge.warn { color:var(--warn); border-color:var(--warn); }
+.dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--muted); margin-right:4px; }
+.dot.ok { background:var(--ok); } .dot.bad { background:var(--bad); } .dot.warn { background:var(--warn); }
+/* streams excluded from health checks: striped, so they read apart from "not checked yet" */
+.excl-fill { background:repeating-linear-gradient(135deg, color-mix(in srgb, var(--muted) 60%, transparent) 0 3px, transparent 3px 6px); }
+.list { display:flex; flex-direction:column; border:1px solid var(--line); border-radius:10px; background:var(--panel); overflow:hidden; }
+.item { display:flex; align-items:center; gap:12px; padding:8px 12px; border-bottom:1px solid var(--line); }
+.item:last-child { border-bottom:0; }
+.progress { height:6px; background:var(--bg); border-radius:3px; overflow:hidden; margin:6px 0 10px; }
+.progress > div { height:100%; background:var(--accent); transition: width .4s; }
+@media (max-width: 760px) { main { padding: 12px !important; } }
+
+/* sticky "unsaved changes" bar shared by the profile page and the settings form */
+.savebar { position:sticky; bottom:16px; z-index:5; display:flex; align-items:center; gap:10px; padding:10px 14px; background:var(--panel); border:1px solid var(--line); border-radius:10px; box-shadow:0 6px 24px rgba(0,0,0,.18); }
+.savebar .grow { flex:1; }
+.rise-enter-active, .rise-leave-active { transition:opacity .15s, transform .15s; }
+.rise-enter-from, .rise-leave-to { opacity:0; transform:translateY(8px); }

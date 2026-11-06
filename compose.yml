@@ -1,0 +1,9 @@
+services:
+  iptv-proxy:
+    build: .
+    # image: ghcr.io/railadeividas/iptv-proxy
+    ports: ["8810:8810"]
+    volumes: ["iptv:/data"]
+    restart: unless-stopped
+volumes:
+  iptv:

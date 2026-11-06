@@ -1,0 +1,97 @@
+package proxy
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"iptv-proxy/internal/settings"
+	"iptv-proxy/internal/store"
+)
+
+func testSettings(t *testing.T) *settings.Settings {
+	t.Helper()
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	return settings.New(st)
+}
+
+func TestConnectionLimitFollowsTheSetting(t *testing.T) {
+	set := testSettings(t)
+	px := New(NewSigner([]byte("0123456789abcdef0123456789abcdef")), set)
+	if errs := set.Apply(map[string]any{"max_connections": 2.0}); errs != nil {
+		t.Fatal(errs)
+	}
+	r1, ok1 := px.Acquire()
+	r2, ok2 := px.Acquire()
+	if _, ok3 := px.Acquire(); !ok1 || !ok2 || ok3 {
+		t.Fatalf("limit 2: %v %v %v", ok1, ok2, ok3)
+	}
+	set.Apply(map[string]any{"max_connections": 3.0}) // raised while streams are running
+	r3, ok := px.Acquire()
+	if !ok {
+		t.Fatal("a raised limit must apply immediately")
+	}
+	r1()
+	r2()
+	r3()
+	if px.inUse.Load() != 0 {
+		t.Fatal("slots not released")
+	}
+}
+
+func TestCompatUserAgentsComeFromSettings(t *testing.T) {
+	set := testSettings(t)
+	if CompatUA(set, "vlc") != set.String("ua_vlc") || CompatUA(set, "") != "" || CompatUA(set, "nope") != "" {
+		t.Fatal("presets")
+	}
+	set.Apply(map[string]any{"ua_exoplayer": "MyExo/1"})
+	if CompatUA(set, "exoplayer") != "MyExo/1" {
+		t.Fatal("edited preset must apply")
+	}
+}
+
+func TestSegmentCacheCanBeSwitchedOff(t *testing.T) {
+	set := testSettings(t)
+	c := newSegCache(set)
+	c.put("a", cached{data: []byte("12345")})
+	if _, ok := c.get("a"); !ok {
+		t.Fatal("cache on by default")
+	}
+	set.Apply(map[string]any{"segment_cache_mb": 0.0})
+	c.put("b", cached{data: []byte("12345")})
+	if _, ok := c.get("b"); ok {
+		t.Fatal("size 0 turns the cache off")
+	}
+}
+
+func TestManifestLimitAndDefaultUserAgentAreLive(t *testing.T) {
+	set := testSettings(t)
+	var gotUA string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUA = r.Header.Get("User-Agent")
+		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+		w.Write([]byte("#EXTM3U\n" + strings.Repeat("#EXT-X-COMMENT:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n", 40000)))
+	}))
+	defer up.Close()
+	px := New(NewSigner([]byte("0123456789abcdef0123456789abcdef")), set)
+
+	if _, err := px.Open(t.Context(), nil, Payload{U: up.URL + "/a.m3u8"}); err != nil {
+		t.Fatalf("2.5 MB manifest under the 16 MB default: %v", err)
+	}
+	if gotUA != set.String("proxy_default_user_agent") {
+		t.Fatalf("default UA: %q", gotUA)
+	}
+	set.Apply(map[string]any{"manifest_max_mb": 1.0, "proxy_default_user_agent": "Custom/9"})
+	_, err := px.Open(t.Context(), nil, Payload{U: up.URL + "/a.m3u8"})
+	if err == nil || !strings.Contains(err.Error(), "exceeds 1 MiB") {
+		t.Fatalf("expected the new limit to apply, got %v", err)
+	}
+	if gotUA != "Custom/9" {
+		t.Fatalf("edited default UA: %q", gotUA)
+	}
+}
