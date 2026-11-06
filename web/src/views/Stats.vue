@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api'
 import { store, can, toast } from '../store'
@@ -34,8 +34,18 @@ function setSize(n) {
 }
 
 const o = ref(null) // overview: now, totals, profiles, settings that matter here
-const list = ref({ total: 0, items: [] })
 const loaded = ref(false)
+// The last answer of each list. Switching between Sessions, Channels and Devices shows the list's last data at once and
+// refreshes it quietly behind it, so nothing blanks or jumps. A different period, profile or page size drops them.
+const lists = reactive({ sessions: null, channels: null, devices: null })
+const body = ref(null) // the list area
+const hold = ref(0) // height kept for it while a list that was never loaded is on its way, so the page does not jump
+function pickView(v) {
+  hold.value = lists[v] ? 0 : body.value?.offsetHeight || 0
+  setQuery({ view: v === 'sessions' ? '' : v, page: '', mode: '' })
+}
+const list = computed(() => lists[view.value] || { total: 0, items: [] })
+const ready = computed(() => !!lists[view.value])
 const pages = computed(() => Math.max(1, Math.ceil(list.value.total / size.value)))
 
 function params(extra = {}) {
@@ -47,17 +57,26 @@ async function loadOverview() {
   try { o.value = await api.get('/stats?' + params()) } catch (e) { if (e.message !== 'sign in required') toast(e.message) }
 }
 const endpoint = { sessions: '/stats/sessions', channels: '/stats/channels', devices: '/stats/clients' }
+let listBase = ''
+let listSeq = 0
 async function loadList() {
+  const base = `${days.value}|${profile.value}|${size.value}`
+  if (base !== listBase) { listBase = base; for (const k of Object.keys(lists)) lists[k] = null }
+  const v = view.value, seq = ++listSeq
   try {
     const extra = { limit: size.value, offset: page.value * size.value }
-    if (view.value === 'sessions' && mode.value) extra.mode = mode.value
-    const data = await api.get(endpoint[view.value] + '?' + params(extra))
-    list.value = data
+    if (v === 'sessions' && mode.value) extra.mode = mode.value
+    const data = await api.get(endpoint[v] + '?' + params(extra))
+    if (seq !== listSeq || base !== listBase) return // a newer request or other filters took over: this answer is out of date
+    lists[v] = data
+    hold.value = 0
     if (page.value > 0 && !data.items.length && data.total) goPage(Math.max(0, pages.value - 1))
   } catch (e) { if (e.message !== 'sign in required') toast(e.message) }
 }
-async function load() { await Promise.all([loadOverview(), loadList()]); loaded.value = true }
-watch(() => route.query, load)
+async function load() { await Promise.all([loadOverview().then(() => (loaded.value = true)), loadList()]) }
+// the numbers above the lists depend on the period and the profile only; a tab, page or size change reloads just the list
+watch(() => `${days.value}|${profile.value}`, loadOverview)
+watch(() => route.query, loadList)
 // running sessions change by the second: the events say when one starts or ends, the timer keeps the numbers fresh
 const soon = throttle(load, 1500)
 let timer
@@ -171,7 +190,7 @@ const pickProfile = (id) => setQuery({ profile: id, page: '' })
     <div class="card">
       <div class="head">
         <nav class="tabs" aria-label="Lists">
-          <button v-for="v in VIEWS" :key="v[0]" type="button" :class="{ on: view === v[0] }" :aria-current="view === v[0] ? 'true' : null" @click="setQuery({ view: v[0] === 'sessions' ? '' : v[0], page: '', mode: '' })">{{ v[1] }}</button>
+          <button v-for="v in VIEWS" :key="v[0]" type="button" :class="{ on: view === v[0] }" :aria-current="view === v[0] ? 'true' : null" @click="pickView(v[0])">{{ v[1] }}</button>
         </nav>
         <select v-if="view === 'sessions'" :value="mode" aria-label="Kind of session" @change="setFilter('mode', $event.target.value)">
           <option value="">Proxy and redirect</option>
@@ -180,7 +199,9 @@ const pickProfile = (id) => setQuery({ profile: id, page: '' })
         </select>
       </div>
 
-      <p v-if="loaded && !list.total" class="muted small">{{ view === 'devices' ? 'No device used a link in this period.' : 'Nothing was played in this period.' }}</p>
+      <div ref="body" :style="hold ? { minHeight: hold + 'px' } : null">
+      <p v-if="ready && !list.total" class="muted small">{{ view === 'devices' ? 'No device used a link in this period.' : 'Nothing was played in this period.' }}</p>
+      <p v-else-if="!ready" class="muted small">Loading…</p>
 
       <div v-else-if="view === 'sessions'" class="scroll">
         <table class="t">
@@ -217,7 +238,7 @@ const pickProfile = (id) => setQuery({ profile: id, page: '' })
         </table>
       </div>
 
-      <div v-else class="scroll">
+      <div v-else-if="view === 'devices'" class="scroll">
         <table class="t">
           <thead><tr><th>Device</th><th>Profile</th><th>First seen</th><th>Last seen</th><th class="r">Playlist</th><th class="r">Guide</th><th class="r">Plays</th></tr></thead>
           <tbody>
@@ -235,6 +256,7 @@ const pickProfile = (id) => setQuery({ profile: id, page: '' })
       </div>
 
       <Pager v-if="list.total" :page="page" :pages="pages" :total="list.total" :size="size" :count="list.items.length" :sizes="SIZES" @go="goPage" @size="setSize" />
+      </div>
     </div>
   </section>
 </template>
