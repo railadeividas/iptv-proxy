@@ -1,5 +1,5 @@
 # 1. Vue admin UI (Vite build)
-FROM node:22-alpine AS ui
+FROM node:25-alpine AS ui
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
@@ -18,7 +18,7 @@ ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X iptv-proxy/internal/version.Version=${VERSION}" -o /iptv-proxy ./cmd/server
 
 # 3. Runtime (Node is needed only for the iptv-org/epg grabber)
-FROM node:22-alpine
+FROM node:25-alpine
 RUN apk add --no-cache git ca-certificates tzdata
 # Pinned grabber ref; bump EPG_REF (or rebuild weekly in CI) to update.
 ARG EPG_REF=master
