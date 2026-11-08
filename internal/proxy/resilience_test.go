@@ -128,3 +128,58 @@ func TestPrefetchFillsTheCache(t *testing.T) {
 		t.Fatalf("player must be served from the cache: %d %q", code, body)
 	}
 }
+
+func TestPrefetchRespectsThePerServerLimit(t *testing.T) {
+	hold := make(chan struct{})
+	var segHits atomic.Int32
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, ".m3u8"):
+			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+			w.Write([]byte("#EXTM3U\n#EXTINF:6,\ns1.ts\n#EXTINF:6,\ns2.ts\n"))
+		case r.URL.Path == "/long":
+			w.Header().Set("Content-Type", "video/mp2t")
+			w.Write([]byte("x"))
+			w.(http.Flusher).Flush()
+			<-hold
+		default:
+			segHits.Add(1)
+			w.Header().Set("Content-Type", "video/mp2t")
+			w.Write([]byte("seg"))
+		}
+	}))
+	defer up.Close()
+	defer close(hold)
+	set := testSettings(t)
+	px := New(NewSigner([]byte("0123456789abcdef0123456789abcdef")), set)
+	set.Apply(map[string]any{"segment_prefetch_count": 2.0, "upstream_per_host_requests": 1.0})
+
+	// a player's stream holds the only request the server is allowed
+	long, err := px.Open(t.Context(), nil, Payload{U: up.URL + "/long"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// players are never refused, even at the limit, and they trigger a prefetch that must yield
+	if code, _ := signedGet(t, px, Payload{U: up.URL + "/live.m3u8"}); code != 200 {
+		t.Fatalf("player refused: %d", code)
+	}
+	time.Sleep(150 * time.Millisecond)
+	if segHits.Load() != 0 {
+		t.Fatal("prefetch must not start while the server is at its limit")
+	}
+	long.Close() // the slot frees up and the limit applies live
+	signedGet(t, px, Payload{U: up.URL + "/live.m3u8"})
+	for i := 0; i < 200 && segHits.Load() < 1; i++ {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if segHits.Load() == 0 {
+		t.Fatal("prefetch must run once the server is below the limit")
+	}
+	time.Sleep(100 * time.Millisecond)
+	px.hosts.mu.Lock()
+	leaked := len(px.hosts.n)
+	px.hosts.mu.Unlock()
+	if leaked != 0 {
+		t.Fatal("request counts leaked")
+	}
+}

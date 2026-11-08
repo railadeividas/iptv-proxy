@@ -54,7 +54,7 @@ func (p *Proxy) fetchSegment(k string, pl Payload) {
 	defer release()
 	ctx, cancel := context.WithTimeout(context.Background(), p.set.Seconds("upstream_response_timeout_seconds"))
 	defer cancel()
-	up, err := p.open(ctx, nil, pl)
+	up, err := p.open(ctx, nil, pl, true)
 	if err != nil {
 		return
 	}

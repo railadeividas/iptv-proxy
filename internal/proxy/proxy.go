@@ -13,6 +13,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -39,6 +40,7 @@ type Proxy struct {
 	client atomic.Pointer[http.Client]
 	inUse  atomic.Int64 // open proxied connections
 	cache  *segCache
+	hosts  hostCount
 
 	upstreamOK, upstreamErr atomic.Uint64 // requests to streams that worked / failed (not counting players that left)
 
@@ -122,13 +124,50 @@ type Upstream struct {
 	Payload  Payload
 	Kind     string // "hls", "dash" or "" for raw media
 	Manifest []byte
+	done     func() // releases the server's request count
 }
 
 func (u *Upstream) Close() {
 	if u.resp != nil { // a held-over playlist has no response
 		u.resp.Body.Close()
 	}
+	if u.done != nil {
+		u.done()
+		u.done = nil
+	}
 }
+
+// hostCount counts the requests open to each server (host and port).
+type hostCount struct {
+	mu sync.Mutex
+	n  map[string]int
+}
+
+// enter counts a request to host; with a limit it refuses (false) when the server is already at it.
+func (h *hostCount) enter(host string, limit int) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if limit > 0 && h.n[host] >= limit {
+		return false
+	}
+	if h.n == nil {
+		h.n = map[string]int{}
+	}
+	h.n[host]++
+	return true
+}
+
+func (h *hostCount) leave(host string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.n[host] <= 1 {
+		delete(h.n, host)
+	} else {
+		h.n[host]--
+	}
+}
+
+var errHostBusy = errors.New("server is at its request limit")
 
 // transient is an upstream failure that may pass by itself: no answer, or a 5xx / 429 status.
 func transient(err error) bool {
@@ -165,7 +204,7 @@ func (p *Proxy) Open(ctx context.Context, in *http.Request, pl Payload) (*Upstre
 	var up *Upstream
 	var err error
 	for try := 0; ; try++ {
-		up, err = p.open(ctx, in, pl)
+		up, err = p.open(ctx, in, pl, false)
 		if err == nil || ctx.Err() != nil || try >= p.set.Int("upstream_retries") || !transient(err) {
 			break
 		}
@@ -183,7 +222,34 @@ func (p *Proxy) Open(ctx context.Context, in *http.Request, pl Payload) (*Upstre
 	return up, err
 }
 
-func (p *Proxy) open(ctx context.Context, in *http.Request, pl Payload) (*Upstream, error) {
+// open requests the upstream and counts the request against its server until the Upstream is closed.
+// capped requests (prefetch) are refused while the server is at upstream_per_host_requests.
+func (p *Proxy) open(ctx context.Context, in *http.Request, pl Payload, capped bool) (*Upstream, error) {
+	host := ""
+	if u, err := url.Parse(pl.U); err == nil {
+		host = u.Host
+	}
+	limit := 0
+	if capped {
+		limit = p.set.Int("upstream_per_host_requests")
+	}
+	if !p.hosts.enter(host, limit) {
+		return nil, errHostBusy
+	}
+	up, err := p.openRaw(ctx, in, pl)
+	if err != nil {
+		p.hosts.leave(host)
+		return nil, err
+	}
+	if up.Kind != "" {
+		p.hosts.leave(host) // a playlist is already read in full: its connection is done
+		return up, nil
+	}
+	up.done = func() { p.hosts.leave(host) }
+	return up, nil
+}
+
+func (p *Proxy) openRaw(ctx context.Context, in *http.Request, pl Payload) (*Upstream, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pl.U, nil) // HEAD is answered via GET
 	if err != nil {
 		return nil, err
