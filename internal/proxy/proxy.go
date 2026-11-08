@@ -124,7 +124,20 @@ type Upstream struct {
 	Manifest []byte
 }
 
-func (u *Upstream) Close() { u.resp.Body.Close() }
+func (u *Upstream) Close() {
+	if u.resp != nil { // a held-over playlist has no response
+		u.resp.Body.Close()
+	}
+}
+
+// transient is an upstream failure that may pass by itself: no answer, or a 5xx / 429 status.
+func transient(err error) bool {
+	var se StatusError
+	if errors.As(err, &se) {
+		return se.Code >= 500 || se.Code == http.StatusTooManyRequests
+	}
+	return true
+}
 
 func isManifestPath(p string) bool {
 	p = strings.ToLower(p)
@@ -149,7 +162,18 @@ func (p *Proxy) Stats() Stats {
 // Open requests the upstream URL with the payload's headers. Errors (including
 // HTTP >= 400 and HTML responses) let callers fall back to another stream.
 func (p *Proxy) Open(ctx context.Context, in *http.Request, pl Payload) (*Upstream, error) {
-	up, err := p.open(ctx, in, pl)
+	var up *Upstream
+	var err error
+	for try := 0; ; try++ {
+		up, err = p.open(ctx, in, pl)
+		if err == nil || ctx.Err() != nil || try >= p.set.Int("upstream_retries") || !transient(err) {
+			break
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(time.Duration(p.set.Int("upstream_retry_delay_ms")) * time.Millisecond):
+		}
+	}
 	switch {
 	case err == nil:
 		p.upstreamOK.Add(1)
@@ -256,6 +280,14 @@ func (p *Proxy) Respond(w http.ResponseWriter, in *http.Request, up *Upstream, p
 	h := w.Header()
 	if up.Kind != "" {
 		rw := &rewriter{signer: p.signer, pub: pub, base: up.URL, ref: up.Payload.R, ua: up.Payload.A, exp: time.Now().Add(p.set.Hours("link_expiry_hours")).Unix(), prof: up.Payload.P, ck: up.Payload.C}
+		if in.Method != http.MethodHead && up.resp != nil { // a held-over copy is not fresh: it must not renew itself
+			if p.set.Int("playlist_holdover_seconds") > 0 {
+				p.cache.hold(cacheKey(up.Payload), heldManifest{kind: up.Kind, manifest: up.Manifest, url: up.URL, at: time.Now()})
+			}
+			if up.Kind == "hls" {
+				p.prefetch(up)
+			}
+		}
 		var out []byte
 		if up.Kind == "hls" {
 			out = rw.HLS(up.Manifest)
@@ -429,6 +461,23 @@ func (p *Proxy) ServeSigned(w http.ResponseWriter, r *http.Request, prefix, pub 
 			return
 		}
 	}
+	if r.Method == http.MethodGet && r.Header.Get("Range") == "" {
+		if ch := p.cache.pending(cacheKey(pl)); ch != nil {
+			// the segment is being prefetched: wait for it instead of asking the server twice
+			select {
+			case <-ch:
+			case <-r.Context().Done():
+			case <-time.After(p.set.Seconds("upstream_response_timeout_seconds")):
+			}
+			if c, ok := p.cache.get(cacheKey(pl)); ok {
+				setCORS(w)
+				w.Header().Set("Content-Type", c.ct)
+				w.Header().Set("Content-Length", strconv.Itoa(len(c.data)))
+				w.Write(c.data)
+				return
+			}
+		}
+	}
 	release, ok := p.Acquire()
 	if !ok {
 		http.Error(w, "too many connections", http.StatusServiceUnavailable)
@@ -436,6 +485,13 @@ func (p *Proxy) ServeSigned(w http.ResponseWriter, r *http.Request, prefix, pub 
 	}
 	defer release()
 	up, err := p.Open(r.Context(), r, pl)
+	if err != nil && r.Context().Err() == nil && transient(err) {
+		// a playlist the upstream cannot give now: hand out the last good copy for a while
+		if h, ok := p.cache.holdover(cacheKey(pl), p.set.Seconds("playlist_holdover_seconds")); ok {
+			p.Respond(w, r, &Upstream{URL: h.url, Payload: pl, Kind: h.kind, Manifest: h.manifest}, pub)
+			return
+		}
+	}
 	if err != nil {
 		var se StatusError
 		code := http.StatusBadGateway

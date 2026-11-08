@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,10 +24,24 @@ type segCache struct {
 	set  *settings.Settings // size and lifetime are read live
 
 	hits, misses atomic.Uint64
+
+	inflight map[string]chan struct{} // segments being prefetched
+	held     map[string]heldManifest  // last good playlists
 }
 
+// heldManifest is the last good copy of a playlist, served when the upstream fails.
+type heldManifest struct {
+	kind     string
+	manifest []byte
+	url      *url.URL
+	at       time.Time
+}
+
+// holdoverMaxAge bounds how long a copy is kept; it matches the largest playlist_holdover_seconds.
+const holdoverMaxAge = 300 * time.Second
+
 func newSegCache(set *settings.Settings) *segCache {
-	return &segCache{m: map[string]cached{}, set: set}
+	return &segCache{m: map[string]cached{}, set: set, inflight: map[string]chan struct{}{}, held: map[string]heldManifest{}}
 }
 
 func cacheKey(pl Payload) string { return pl.U + "\x00" + pl.R + "\x00" + pl.A }
@@ -75,4 +90,64 @@ func (c *segCache) usage() (entries, bytes int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return len(c.m), c.size
+}
+
+// has reports whether a fresh copy is cached, without counting a hit or a miss.
+func (c *segCache) has(k string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	v, ok := c.m[k]
+	return ok && !time.Now().After(v.expires)
+}
+
+// startFetch claims k for a prefetch; false when it is cached or already being fetched.
+func (c *segCache) startFetch(k string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if v, ok := c.m[k]; ok && !time.Now().After(v.expires) {
+		return false
+	}
+	if _, ok := c.inflight[k]; ok {
+		return false
+	}
+	c.inflight[k] = make(chan struct{})
+	return true
+}
+
+func (c *segCache) endFetch(k string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if ch, ok := c.inflight[k]; ok {
+		close(ch)
+		delete(c.inflight, k)
+	}
+}
+
+// pending is closed when the prefetch of k ends; nil when none is running.
+func (c *segCache) pending(k string) <-chan struct{} {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.inflight[k]
+}
+
+func (c *segCache) hold(k string, h heldManifest) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for key, e := range c.held {
+		if h.at.Sub(e.at) > holdoverMaxAge {
+			delete(c.held, key)
+		}
+	}
+	c.held[k] = h
+}
+
+// holdover returns the last good playlist when it is younger than grace.
+func (c *segCache) holdover(k string, grace time.Duration) (heldManifest, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	h, ok := c.held[k]
+	if !ok || grace <= 0 || time.Since(h.at) > grace {
+		return heldManifest{}, false
+	}
+	return h, true
 }
