@@ -1,5 +1,5 @@
 # 1. Vue admin UI (Vite build)
-FROM node:lts-alpine AS ui
+FROM --platform=$BUILDPLATFORM node:lts-alpine AS ui
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
@@ -7,7 +7,9 @@ COPY web/ .
 RUN npm run build
 
 # 2. Go binary (UI embedded via go:embed)
-FROM golang:1.27.3-alpine AS app
+FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine AS app
+# built on the runner's own architecture and cross-compiled (pure Go, no cgo), so arm64 needs no emulation here
+ARG TARGETOS TARGETARCH
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -15,7 +17,7 @@ COPY . .
 COPY --from=ui /web/dist ./web/dist
 # the publish workflow passes the short commit hash; a local build shows "dev"
 ARG VERSION=dev
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X iptv-proxy/internal/version.Version=${VERSION}" -o /iptv-proxy ./cmd/server
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X iptv-proxy/internal/version.Version=${VERSION}" -o /iptv-proxy ./cmd/server
 
 # 3. Runtime (Node is needed only for the iptv-org/epg grabber)
 FROM node:lts-alpine
