@@ -9,7 +9,7 @@ export const router = createRouter({
     { path: '/login', name: 'login', component: () => import('./views/Login.vue'), meta: { public: true } },
     { path: '/channels', name: 'channels', component: () => import('./views/Channels.vue') },
     { path: '/profiles/:id?', name: 'profiles', component: () => import('./views/Profiles.vue') },
-    { path: '/stats', name: 'stats', component: () => import('./views/Stats.vue') },
+    { path: '/stats/:tab(live|overview|channels|profiles|devices|sessions|proxy)?', name: 'stats', component: () => import('./views/Stats.vue') },
     { path: '/sources', name: 'sources', component: () => import('./views/Sources.vue'), meta: { perm: 'sources' } },
     { path: '/health', name: 'health', component: () => import('./views/Health.vue'), meta: { perm: 'health' } },
     {

@@ -78,6 +78,13 @@ type Tracker struct {
 	flushMu   sync.Mutex
 	lastPrune time.Time
 	pruneNow  atomic.Bool
+
+	// owned by Flush (flushMu): what was last written to the hourly samples, and the source of the proxy's counters
+	server   func() ServerCounters
+	lastSrv  ServerCounters
+	lastProf map[int64]Counters
+	ringMu   sync.Mutex
+	ring     []liveSample
 }
 
 func New(st *store.Store, set *settings.Settings) *Tracker {
@@ -382,4 +389,123 @@ func (t *Tracker) Flush(final bool) {
 	if ended {
 		t.st.Notify2("activity")
 	}
+	t.sample(now)
+}
+
+// ---- history samples and the live ring ----
+
+// ServerCounters are the proxy's counters that only live in memory; the tracker stores their increase per hour.
+type ServerCounters = store.ServerSample
+
+// SetServerSource tells the tracker where to read the proxy's counters. Without one only the profiles' fetches are sampled.
+func (t *Tracker) SetServerSource(f func() ServerCounters) {
+	t.flushMu.Lock()
+	t.server = f
+	t.flushMu.Unlock()
+}
+
+const (
+	ringKeep = time.Hour // how far back the live samples go
+	ringMax  = 2000
+)
+
+type liveProfile struct {
+	bytes    int64 // cumulative proxied bytes of the profile
+	watching int   // proxied sessions active within the "still watching" window
+}
+
+type liveSample struct {
+	t   int64
+	per map[int64]liveProfile
+}
+
+// LiveSample is one point of the live chart: the proxied bytes so far (cumulative) and the viewers at that moment.
+type LiveSample struct {
+	T        int64 `json:"t"`
+	Bytes    int64 `json:"bytes"`
+	Watching int   `json:"watching"`
+}
+
+// delta is the increase since the last reading; a lower value means the counter started over.
+func delta(now, last int64) int64 {
+	if now < last {
+		return now
+	}
+	return now - last
+}
+
+// sample runs at the end of every Flush (the caller holds flushMu): it adds the increase of the counters to the row of
+// the current hour and appends a point to the live ring. The counters themselves are never touched.
+func (t *Tracker) sample(now time.Time) {
+	_, per := t.Counters()
+	var srv, dsrv ServerCounters
+	if t.server != nil {
+		srv = t.server()
+		dsrv = ServerCounters{CacheHits: delta(srv.CacheHits, t.lastSrv.CacheHits), CacheMisses: delta(srv.CacheMisses, t.lastSrv.CacheMisses),
+			CacheHitBytes: delta(srv.CacheHitBytes, t.lastSrv.CacheHitBytes), Retries: delta(srv.Retries, t.lastSrv.Retries), Holdovers: delta(srv.Holdovers, t.lastSrv.Holdovers)}
+	}
+	dper := map[int64]store.ProfileSample{}
+	for id, c := range per {
+		last := t.lastProf[id]
+		if d := (store.ProfileSample{Playlists: delta(c.Playlists, last.Playlists), Guides: delta(c.Guides, last.Guides)}); d != (store.ProfileSample{}) {
+			dper[id] = d
+		}
+	}
+	t.lastSrv, t.lastProf = srv, per
+	if !t.enabled() { // the counters are followed either way, so the time recording was off is not counted later
+		return
+	}
+	t.st.AddSamples(now.UTC().Truncate(time.Hour).Unix(), dsrv, dper)
+
+	cut := now.Add(-t.set.Seconds("stats_live_seconds")).UnixNano()
+	pl := map[int64]liveProfile{}
+	t.mu.Lock()
+	for _, s := range t.live {
+		if s.mode != Proxy || (s.active.Load() == 0 && s.last.Load() < cut) {
+			continue
+		}
+		x := pl[s.profileID]
+		x.watching++
+		pl[s.profileID] = x
+	}
+	for id, c := range t.per {
+		x := pl[id]
+		x.bytes = c.bytes.Load()
+		pl[id] = x
+	}
+	t.mu.Unlock()
+
+	t.ringMu.Lock()
+	defer t.ringMu.Unlock()
+	t.ring = append(t.ring, liveSample{t: now.Unix(), per: pl})
+	old := now.Add(-ringKeep).Unix()
+	i := 0
+	for i < len(t.ring) && t.ring[i].t < old {
+		i++
+	}
+	if over := len(t.ring) - i - ringMax; over > 0 {
+		i += over
+	}
+	if i > 0 {
+		t.ring = append([]liveSample(nil), t.ring[i:]...)
+	}
+}
+
+// LiveSamples returns the last hour of live points, oldest first, summed over the profiles that in accepts
+// (nil accepts every profile).
+func (t *Tracker) LiveSamples(in func(profileID int64) bool) []LiveSample {
+	t.ringMu.Lock()
+	defer t.ringMu.Unlock()
+	out := make([]LiveSample, 0, len(t.ring))
+	for _, r := range t.ring {
+		x := LiveSample{T: r.t}
+		for id, p := range r.per {
+			if in == nil || in(id) {
+				x.Bytes += p.bytes
+				x.Watching += p.watching
+			}
+		}
+		out = append(out, x)
+	}
+	return out
 }

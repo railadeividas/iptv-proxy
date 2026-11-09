@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 )
 
@@ -72,13 +73,34 @@ func (s *Store) PruneActivity(maxDays, maxSessions, maxClients int) {
 	_, _ = s.DB.Exec(`DELETE FROM activity_sessions WHERE last < ?`, cutoff)
 	_, _ = s.DB.Exec(`DELETE FROM activity_sessions WHERE id IN (SELECT id FROM activity_sessions ORDER BY started DESC, id DESC LIMIT -1 OFFSET ?)`, maxSessions)
 	_, _ = s.DB.Exec(`DELETE FROM activity_clients WHERE last_seen < ?`, cutoff)
+	_, _ = s.DB.Exec(`DELETE FROM stats_samples WHERE hour < ?`, cutoff)
+	_, _ = s.DB.Exec(`DELETE FROM stats_profile_samples WHERE hour < ?`, cutoff)
 	_, _ = s.DB.Exec(`DELETE FROM activity_clients WHERE id IN (SELECT id FROM activity_clients ORDER BY last_seen DESC, id DESC LIMIT -1 OFFSET ?)`, maxClients)
 }
 
-// ActivityFilter narrows the stats. Owner 0 means everybody's profiles; Profile 0 every profile; Since 0 all time.
+// ActivityFilter narrows the stats. Owner 0 means everybody's profiles; Profile 0 (and no Profiles) every profile; Profiles
+// is a selection of several; Since 0 all time.
 type ActivityFilter struct {
 	Owner, Profile, Since int64
+	Profiles              []int64
+	Until                 int64 // exclusive; 0 = no upper bound
 	Mode                  string
+}
+
+// Includes tells whether a profile is part of the filter's profile selection.
+func (f ActivityFilter) Includes(id int64) bool {
+	if f.Profile == 0 && len(f.Profiles) == 0 {
+		return true
+	}
+	if f.Profile == id {
+		return true
+	}
+	for _, p := range f.Profiles {
+		if p == id {
+			return true
+		}
+	}
+	return false
 }
 
 // where builds the conditions on a query that joins profiles as p and sessions or clients as a.
@@ -94,9 +116,19 @@ func (f ActivityFilter) where(timeCol string) (string, []any) {
 		q += ` AND a.profile_id=?`
 		args = append(args, f.Profile)
 	}
+	if len(f.Profiles) > 0 {
+		q += ` AND a.profile_id IN (?` + strings.Repeat(`,?`, len(f.Profiles)-1) + `)`
+		for _, id := range f.Profiles {
+			args = append(args, id)
+		}
+	}
 	if f.Since != 0 {
 		q += ` AND a.` + timeCol + `>=?`
 		args = append(args, f.Since)
+	}
+	if f.Until != 0 {
+		q += ` AND a.` + timeCol + `<?`
+		args = append(args, f.Until)
 	}
 	if f.Mode != "" {
 		q += ` AND a.mode=?`
@@ -125,7 +157,7 @@ func (s *Store) ActivityTotals(f ActivityFilter) (ActivityTotals, error) {
 	if err != nil {
 		return t, err
 	}
-	cf := ActivityFilter{Owner: f.Owner, Profile: f.Profile, Since: f.Since}
+	cf := ActivityFilter{Owner: f.Owner, Profile: f.Profile, Profiles: f.Profiles, Since: f.Since}
 	cw, cargs := cf.where("last_seen")
 	err = s.DB.QueryRow(`SELECT COUNT(*) FROM activity_clients a JOIN profiles p ON p.id=a.profile_id`+cw, cargs...).Scan(&t.Clients)
 	return t, err
@@ -174,45 +206,6 @@ func (s *Store) ActivityProfiles(f ActivityFilter) ([]ProfileActivity, error) {
 		out = append(out, x)
 	}
 	return out, rows.Err()
-}
-
-// ChannelActivity is one row of the top-channels table.
-type ChannelActivity struct {
-	CK       string `json:"ck"`
-	Name     string `json:"name"`
-	Sessions int64  `json:"sessions"`
-	Proxy    int64  `json:"proxy"`
-	Redirect int64  `json:"redirect"`
-	Bytes    int64  `json:"bytes"`
-	Seconds  int64  `json:"seconds"`
-	Viewers  int64  `json:"viewers"` // different devices
-	Last     int64  `json:"last"`
-}
-
-// ActivityChannels lists channels by how often they were played, one page, with the number of all rows.
-func (s *Store) ActivityChannels(f ActivityFilter, limit, offset int) ([]ChannelActivity, int, error) {
-	w, args := f.where("started")
-	from := ` FROM activity_sessions a JOIN profiles p ON p.id=a.profile_id` + w
-	var total int
-	if err := s.DB.QueryRow(`SELECT COUNT(DISTINCT a.ck)`+from, args...).Scan(&total); err != nil {
-		return nil, 0, err
-	}
-	rows, err := s.DB.Query(`SELECT a.ck, COUNT(*), SUM(a.mode='proxy'), SUM(a.mode='redirect'), SUM(a.bytes),
-		SUM(CASE WHEN a.mode='proxy' THEN a.last-a.started ELSE 0 END), COUNT(DISTINCT a.ip||'|'||a.ua), MAX(a.last)`+from+
-		` GROUP BY a.ck ORDER BY 2 DESC, 5 DESC, a.ck LIMIT ? OFFSET ?`, append(args, limit, offset)...)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer rows.Close()
-	out := []ChannelActivity{}
-	for rows.Next() {
-		var x ChannelActivity
-		if err := rows.Scan(&x.CK, &x.Sessions, &x.Proxy, &x.Redirect, &x.Bytes, &x.Seconds, &x.Viewers, &x.Last); err != nil {
-			return nil, 0, err
-		}
-		out = append(out, x)
-	}
-	return out, total, rows.Err()
 }
 
 // ActivityClients lists devices, most recently seen first.

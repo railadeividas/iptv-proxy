@@ -35,9 +35,9 @@ async function logout() {
         <RouterLink to="/channels">Channels</RouterLink>
         <!-- /profiles/:id has a parameter, which the link itself does not, so the router would not mark it active -->
         <RouterLink to="/profiles" :class="{ 'router-link-active': $route.name === 'profiles' }">Profiles</RouterLink>
-        <RouterLink to="/stats">Stats</RouterLink>
         <RouterLink v-if="can('sources')" to="/sources">Sources</RouterLink>
         <RouterLink v-if="can('health')" to="/health">Health</RouterLink>
+        <RouterLink to="/stats">Stats</RouterLink>
         <RouterLink v-if="can('settings')" to="/settings">Settings</RouterLink>
       </nav>
       <span v-if="store.status && !store.status.ready" class="pill warn">

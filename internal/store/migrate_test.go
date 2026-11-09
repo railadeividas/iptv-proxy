@@ -370,8 +370,8 @@ func TestMigrateAddsActivity(t *testing.T) {
 	if len(ps) != 1 || ps[0].Playlists != 2 || ps[0].Sessions != 1 || ps[0].Bytes != 5000 {
 		t.Fatalf("profiles: %+v", ps)
 	}
-	chs, total, _ := st.ActivityChannels(ActivityFilter{}, 10, 0)
-	if total != 1 || chs[0].CK != "A@SD" || chs[0].Viewers != 1 {
+	chs, total, _ := st.ActivityBreakdown(ActivityFilter{}, "channel", "sessions", 10, 0)
+	if total != 1 || chs[0].Key != "A@SD" || chs[0].Viewers != 1 {
 		t.Fatalf("channels: %+v", chs)
 	}
 
@@ -396,5 +396,71 @@ func TestMigrateAddsActivity(t *testing.T) {
 	st.DB.QueryRow(`SELECT (SELECT COUNT(*) FROM activity_sessions)+(SELECT COUNT(*) FROM activity_clients)`).Scan(&n)
 	if n != 0 {
 		t.Fatal("activity follows a deleted profile")
+	}
+}
+
+// The sample tables are added to a database that already holds activity; the old data stays, new databases get them too,
+// samples follow their profile and PruneActivity drops the old ones.
+func TestMigrateAddsStatsSamples(t *testing.T) {
+	dir := t.TempDir()
+	real := migrations
+	withMigrations(t, real[:len(real)-1]) // the database as it was before this migration
+	st, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().Unix()
+	st.DB.Exec(`INSERT INTO users(id,username,password,role,created_at) VALUES(1,'ann','x','admin',1)`)
+	st.DB.Exec(`INSERT INTO profiles(id,owner_id,name,token,created_at) VALUES(1,1,'Living room','tok',1)`)
+	st.AddSession(Session{ProfileID: 1, CK: "A@SD", Mode: "proxy", Started: now - 60, Last: now, Bytes: 7})
+	if _, err := st.DB.Exec(`SELECT 1 FROM stats_samples`); err == nil {
+		t.Fatal("the tables do not exist before the migration")
+	}
+	st.Close()
+
+	withMigrations(t, real)
+	st, err = Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if v := version(t, st); v != baselineVersion+len(real) {
+		t.Fatalf("version %d", v)
+	}
+	if _, total, _ := st.ActivitySessions(ActivityFilter{}, 10, 0); total != 1 {
+		t.Fatal("activity survives the migration")
+	}
+	hour := now / 3600 * 3600
+	st.AddSamples(hour, ServerSample{CacheHits: 3, Retries: 1}, map[int64]ProfileSample{1: {Playlists: 2}, 99: {Guides: 5}})
+	st.AddSamples(hour, ServerSample{CacheHits: 2}, map[int64]ProfileSample{1: {Playlists: 1, Guides: 4}})
+	var hits, retries, pl, gu, rows int64
+	st.DB.QueryRow(`SELECT cache_hits, retries FROM stats_samples WHERE hour=?`, hour).Scan(&hits, &retries)
+	st.DB.QueryRow(`SELECT playlists, guides FROM stats_profile_samples WHERE hour=? AND profile_id=1`, hour).Scan(&pl, &gu)
+	st.DB.QueryRow(`SELECT COUNT(*) FROM stats_profile_samples`).Scan(&rows)
+	if hits != 5 || retries != 1 || pl != 3 || gu != 4 || rows != 1 {
+		t.Fatalf("samples add up per hour and skip missing profiles: %d %d %d %d rows=%d", hits, retries, pl, gu, rows)
+	}
+	st.AddSamples(hour-40*86400, ServerSample{CacheHits: 1}, map[int64]ProfileSample{1: {Playlists: 1}})
+	st.PruneActivity(30, 100, 100)
+	st.DB.QueryRow(`SELECT (SELECT COUNT(*) FROM stats_samples)*10+(SELECT COUNT(*) FROM stats_profile_samples)`).Scan(&rows)
+	if rows != 11 {
+		t.Fatalf("samples older than the history are pruned: %d", rows)
+	}
+	if _, err := st.DB.Exec(`DELETE FROM profiles WHERE id=1`); err != nil {
+		t.Fatal(err)
+	}
+	st.DB.QueryRow(`SELECT COUNT(*) FROM stats_profile_samples`).Scan(&rows)
+	if rows != 0 {
+		t.Fatal("samples follow a deleted profile")
+	}
+
+	// a brand-new database has them too
+	fresh, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fresh.Close()
+	if _, err := fresh.DB.Exec(`SELECT hour, cache_hits FROM stats_samples`); err != nil {
+		t.Fatal(err)
 	}
 }

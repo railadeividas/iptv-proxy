@@ -2,18 +2,22 @@
   color-scheme: light;
   --bg:#f5f6f8; --panel:#fff; --line:#dde1e8; --text:#1b1f27; --muted:#586174;
   --accent:#2f6df0; --ok:#1f9d63; --bad:#d64545; --warn:#b7791f;
+  /* chart series: one hue per entity (profile, player…), in a fixed order; --so folds the rest into "other" */
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --so:#8b93a5;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
     color-scheme: dark;
     --bg:#0f1115; --panel:#181b22; --line:#2a2f3a; --text:#e6e8ee; --muted:#8b93a5;
     --accent:#4f8cff; --ok:#3ecf8e; --bad:#ef5b5b; --warn:#e5b04a;
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --so:#6f7788;
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
   --bg:#0f1115; --panel:#181b22; --line:#2a2f3a; --text:#e6e8ee; --muted:#8b93a5;
   --accent:#4f8cff; --ok:#3ecf8e; --bad:#ef5b5b; --warn:#e5b04a;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --so:#6f7788;
 }
 :root[data-theme="light"] { color-scheme: light; }
 
@@ -43,6 +47,8 @@ td, th { text-align:left; padding:5px 8px; border-bottom:1px solid var(--line); 
 
 .muted { color: var(--muted); } .err { color: var(--bad); }
 /* cards that share a row always get the same height; .card-foot sticks to the bottom */
+.chead { display:flex; justify-content:space-between; align-items:center; gap:8px 12px; flex-wrap:wrap; margin-bottom:8px; }
+.chead h2 { margin:0; }
 .card-row { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap:16px; align-items:stretch; margin-bottom:16px; }
 .card-row > .card { margin-bottom:0; display:flex; flex-direction:column; }
 .card-row > .card > .card-foot { margin-top:auto; padding-top:8px; }

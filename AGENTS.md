@@ -164,6 +164,22 @@ go vet ./... && go test ./...
 - Stats use no permission of their own: everybody signed in gets `/api/stats*`, scoped with `owner(r)` like profiles (someone else's
   profile id is a 404); the connection load is only sent to roles with `profiles.all`.
 - History limits are settings (`stats_history_*`) pruned by `Store.PruneActivity`; the tables follow their profile (`ON DELETE CASCADE`).
+- **Hourly samples**: what is not in the session tables (the proxy's cache hits and misses, hit bytes, retries, hold-overs; playlist and guide
+  fetches per profile) is saved by `Flush` as the *increase* since the last flush into `stats_samples` (server-wide, one row per UTC hour) and
+  `stats_profile_samples` (per profile, cascades). The in-memory counters are only read, never reset: `/metrics` shows them. Pruned with the
+  other history. `Flush` also fills a one-hour in-memory ring (`Tracker.LiveSamples`) for the Live tab; it is empty after a restart.
+- **Stats API** (all `api()`, scoped by `owner(r)`): `/api/stats` (totals, profiles, running sessions, proxy load), `/timeline` (sparse buckets
+  per profile and mode, peaks of concurrent streams, active devices), `/patterns` (weekday-by-hour, session lengths, longest session),
+  `/breakdown?by=channel|profile|player|network|host` (ranked, paged), `/samples` (per bucket, plus `by_profile` totals), `/live`, `/clients`, `/sessions`. Every one takes `from` / `to`
+  (unix seconds, `to` exclusive and optional; default the last 7 days), `step` (bucket size: 300, 900, 3600, 86400 or 604800 seconds; none = the
+  server picks about 120 bars, and a step that would give more than 500 bars is raised), `profile` (one id or several separated by commas; somebody else's makes the whole request a 404), `tz` (seconds east of UTC: buckets are cut where
+  the viewer's hours, days and Mondays are) and `shift=1` (the range of the same length right before, for comparisons) through `statsFilter`;
+  never build a range any other way. Rows are counted in the exact range, only the bucket grid is aligned. `/samples` is never finer than an
+  hour and `/live` ignores the range. The `server` part of `/samples` is only for roles that see everybody's activity.
+- **Stats page**: tabs **Live** (the default), **Overview, Channels, Profiles, Devices, Sessions, Proxy** (`/stats/:tab`; Proxy only for roles with
+  `profiles.all`). The Profiles tab lists one row per profile (columns on a desktop, a small card per row on a phone), searchable, sortable and paged; everything in it follows the Time range: it must stay short with many profiles. The Time range is on every tab. Each card or tile wears a `Scope` badge (period / now / all time / since start): keep one on anything that does not follow the Time range. The time range (a Grafana-style picker: quick ranges that move with the clock, or an absolute from/to), the chart step ("Group by": hour, day or week, auto by default; one control in the top bar for every chart cut by time. The UI always sends an explicit `step`, never finer than an hour), profile, measure (sessions / data / watch time, switched inside the cards that follow it), chart type, split and compare live in the URL. Charts are
+  hand-written SVG (`components/stats/StatChart.vue` and friends, shared logic in `src/stats.js`), no chart library; series colours are
+  `--s1..--s5`/`--so` in `style.css`, and a profile keeps its colour on every tab (first five by id, the rest are "other").
 
 ## Metrics
 
@@ -192,7 +208,7 @@ go vet ./... && go test ./...
 
 ## Frontend conventions
 
-- Vue 3 SPA with history-mode routing. Pages: **Channels, Profiles, Stats, Sources, Health, Settings**, shown according to the user's permissions (plus `/setup` and `/login`); Settings has tabs **General** (`/settings`), **iptv-org** (`/settings/iptv-org`, also shows API sync and EPG grabber status), **Health**, **Proxy**, **Stats**, **Metrics**, **Security** and **Users**. Filters, page and
+- Vue 3 SPA with history-mode routing. Pages, in the header's order: **Channels, Profiles, Sources, Health, Stats** (tabs, see Stats), **Settings**, shown according to the user's permissions (plus `/setup` and `/login`); Settings has tabs **General** (`/settings`), **iptv-org** (`/settings/iptv-org`, also shows API sync and EPG grabber status), **Health**, **Proxy**, **Stats**, **Metrics**, **Security** and **Users**. Filters, page and
   page size live in the URL so back/forward and shared links work. Live data arrives over the WebSocket (`src/ws.js`).
 - Modals are native `<dialog>`. Confirmations use `ask()` from `src/store.js` (destructive ones are red); never use
   `window.confirm`. Anything that deletes or removes asks first.

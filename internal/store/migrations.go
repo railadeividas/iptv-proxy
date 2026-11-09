@@ -85,4 +85,25 @@ var migrations = []migration{
 		}
 		return nil
 	}},
+	{name: "add stats_samples and stats_profile_samples: hourly history of cache, retries and playlist/guide fetches", up: func(tx *sql.Tx) error {
+		// stats_samples: one row per UTC hour for the whole server (the proxy's cache and retry counters, which are only
+		// kept in memory otherwise). stats_profile_samples: playlist and guide fetches per profile and hour. Both hold the
+		// increase during the hour and are pruned with the other history (stats_history_days); the second follows its profile.
+		for _, q := range []string{
+			`CREATE TABLE stats_samples(
+				hour INTEGER PRIMARY KEY,
+				cache_hits INTEGER NOT NULL DEFAULT 0, cache_misses INTEGER NOT NULL DEFAULT 0, cache_hit_bytes INTEGER NOT NULL DEFAULT 0,
+				retries INTEGER NOT NULL DEFAULT 0, holdovers INTEGER NOT NULL DEFAULT 0)`,
+			`CREATE TABLE stats_profile_samples(
+				hour INTEGER NOT NULL,
+				profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+				playlists INTEGER NOT NULL DEFAULT 0, guides INTEGER NOT NULL DEFAULT 0,
+				PRIMARY KEY(hour, profile_id))`,
+		} {
+			if _, err := tx.Exec(q); err != nil {
+				return err
+			}
+		}
+		return nil
+	}},
 }

@@ -46,6 +46,10 @@ type Server struct {
 
 func New(cfg config.Config, st *store.Store, set *settings.Settings, sy *isync.Syncer, px *proxy.Proxy, ep *epg.Manager, hc *health.Checker, signer *proxy.Signer, hub *events.Hub, ui fs.FS) *Server {
 	act := activity.New(st, set)
+	act.SetServerSource(func() activity.ServerCounters {
+		x := px.Stats()
+		return activity.ServerCounters{CacheHits: int64(x.CacheHits), CacheMisses: int64(x.CacheMisses), CacheHitBytes: int64(x.CacheHitBytes), Retries: int64(x.Retries), Holdovers: int64(x.Holdovers)}
+	})
 	px.Observe = func(r *http.Request, pl proxy.Payload) (func(int), func()) { return act.Observe(r, pl.P, pl.C, pl.U) }
 	return &Server{cfg: cfg, st: st, set: set, sync: sy, px: px, epg: ep, health: hc, signer: signer, hub: hub, act: act, ui: ui, failures: map[string][]time.Time{}, reqs: map[reqKey]uint64{}}
 }
@@ -96,7 +100,11 @@ func (s *Server) Handler() http.Handler {
 	api("PUT /api/profiles/{id}/channels", s.replaceChannels)
 
 	api("GET /api/stats", s.statsOverview)
-	api("GET /api/stats/channels", s.statsChannels)
+	api("GET /api/stats/timeline", s.statsTimeline)
+	api("GET /api/stats/patterns", s.statsPatterns)
+	api("GET /api/stats/breakdown", s.statsBreakdown)
+	api("GET /api/stats/samples", s.statsSamples)
+	api("GET /api/stats/live", s.statsLive)
 	api("GET /api/stats/clients", s.statsClients)
 	api("GET /api/stats/sessions", s.statsSessions)
 
