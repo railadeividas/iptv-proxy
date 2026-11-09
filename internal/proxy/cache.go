@@ -24,6 +24,9 @@ type segCache struct {
 	set  *settings.Settings // size and lifetime are read live
 
 	hits, misses atomic.Uint64
+	hitBytes     atomic.Uint64 // bytes served from the cache
+	stores       atomic.Uint64 // segments put in the cache
+	rejected     atomic.Uint64 // segments not cached because the cache was full
 
 	inflight map[string]chan struct{} // segments being prefetched
 	held     map[string]heldManifest  // last good playlists
@@ -55,6 +58,7 @@ func (c *segCache) get(k string) (cached, bool) {
 		return cached{}, false
 	}
 	c.hits.Add(1)
+	c.hitBytes.Add(uint64(len(v.data)))
 	return v, true
 }
 
@@ -74,6 +78,7 @@ func (c *segCache) put(k string, v cached) {
 			}
 		}
 		if c.size+len(v.data) > max {
+			c.rejected.Add(1)
 			return
 		}
 	}
@@ -83,6 +88,7 @@ func (c *segCache) put(k string, v cached) {
 	v.expires = now.Add(ttl)
 	c.m[k] = v
 	c.size += len(v.data)
+	c.stores.Add(1)
 }
 
 // usage is what the cache holds now.

@@ -56,8 +56,12 @@ func (p *Proxy) fetchSegment(k string, pl Payload) {
 	defer cancel()
 	up, err := p.open(ctx, nil, pl, true)
 	if err != nil {
+		if err != errHostBusy { // a refusal made here is no request to the server
+			p.upstreamErr.Add(1)
+		}
 		return
 	}
+	p.upstreamOK.Add(1)
 	defer up.Close()
 	resp := up.resp
 	limit := p.set.MB("segment_cache_item_max_mb")
@@ -69,4 +73,5 @@ func (p *Proxy) fetchSegment(k string, pl Payload) {
 		return
 	}
 	p.cache.put(k, cached{status: 200, ct: fixMIME(resp.Header.Get("Content-Type"), up.URL.Path), data: data})
+	p.prefetched.Add(1)
 }

@@ -43,6 +43,8 @@ type Proxy struct {
 	hosts  hostCount
 
 	upstreamOK, upstreamErr atomic.Uint64 // requests to streams that worked / failed (not counting players that left)
+	retries, holdovers      atomic.Uint64 // repeated upstream requests; playlists served from the last good copy
+	prefetched, coalesced   atomic.Uint64 // segments fetched ahead of the player; requests that waited for such a fetch
 
 	// Observe, when set, is told about every proxied request that carries a profile (see Payload.P). It returns
 	// what to call with each number of bytes written to the player and when the request is over. Set it before serving.
@@ -190,12 +192,18 @@ type Stats struct {
 	CacheBytes, CacheLimit     int64
 	CacheHits, CacheMisses     uint64
 	UpstreamOK, UpstreamErrors uint64
+	CacheHitBytes              uint64
+	CacheStores, CacheRejected uint64
+	Prefetched, Coalesced      uint64
+	Retries, Holdovers         uint64
 }
 
 func (p *Proxy) Stats() Stats {
 	n, b := p.cache.usage()
 	return Stats{InUse: p.InUse(), Limit: p.set.Int("max_connections"), CacheEntries: n, CacheBytes: int64(b), CacheLimit: p.set.MB("segment_cache_mb"),
-		CacheHits: p.cache.hits.Load(), CacheMisses: p.cache.misses.Load(), UpstreamOK: p.upstreamOK.Load(), UpstreamErrors: p.upstreamErr.Load()}
+		CacheHits: p.cache.hits.Load(), CacheMisses: p.cache.misses.Load(), UpstreamOK: p.upstreamOK.Load(), UpstreamErrors: p.upstreamErr.Load(),
+		CacheHitBytes: p.cache.hitBytes.Load(), CacheStores: p.cache.stores.Load(), CacheRejected: p.cache.rejected.Load(),
+		Prefetched: p.prefetched.Load(), Coalesced: p.coalesced.Load(), Retries: p.retries.Load(), Holdovers: p.holdovers.Load()}
 }
 
 // Open requests the upstream URL with the payload's headers. Errors (including
@@ -208,6 +216,7 @@ func (p *Proxy) Open(ctx context.Context, in *http.Request, pl Payload) (*Upstre
 		if err == nil || ctx.Err() != nil || try >= p.set.Int("upstream_retries") || !transient(err) {
 			break
 		}
+		p.retries.Add(1)
 		select {
 		case <-ctx.Done():
 		case <-time.After(time.Duration(p.set.Int("upstream_retry_delay_ms")) * time.Millisecond):
@@ -536,6 +545,7 @@ func (p *Proxy) ServeSigned(w http.ResponseWriter, r *http.Request, prefix, pub 
 			case <-time.After(p.set.Seconds("upstream_response_timeout_seconds")):
 			}
 			if c, ok := p.cache.get(cacheKey(pl)); ok {
+				p.coalesced.Add(1)
 				setCORS(w)
 				w.Header().Set("Content-Type", c.ct)
 				w.Header().Set("Content-Length", strconv.Itoa(len(c.data)))
@@ -554,6 +564,7 @@ func (p *Proxy) ServeSigned(w http.ResponseWriter, r *http.Request, prefix, pub 
 	if err != nil && r.Context().Err() == nil && transient(err) {
 		// a playlist the upstream cannot give now: hand out the last good copy for a while
 		if h, ok := p.cache.holdover(cacheKey(pl), p.set.Seconds("playlist_holdover_seconds")); ok {
+			p.holdovers.Add(1)
 			p.Respond(w, r, &Upstream{URL: h.url, Payload: pl, Kind: h.kind, Manifest: h.manifest}, pub)
 			return
 		}

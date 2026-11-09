@@ -88,6 +88,9 @@ func (s *Server) statsOverview(w http.ResponseWriter, r *http.Request) {
 	}
 	if f.Owner == 0 { // the load of the whole server is for those who see everybody's activity
 		out["connections"] = map[string]int{"in_use": s.px.InUse(), "limit": s.set.Int("max_connections")}
+		ps := s.px.Stats()
+		out["cache"] = map[string]any{"entries": ps.CacheEntries, "bytes": ps.CacheBytes, "limit": ps.CacheLimit, "hits": ps.CacheHits, "misses": ps.CacheMisses,
+			"hit_bytes": ps.CacheHitBytes, "prefetched": ps.Prefetched, "coalesced": ps.Coalesced, "retries": ps.Retries, "holdovers": ps.Holdovers}
 	}
 	out["all_profiles"] = auth.Can(userFrom(r).Role, auth.AllProfiles)
 	writeJSON(w, out)

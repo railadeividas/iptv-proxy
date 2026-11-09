@@ -21,7 +21,7 @@ func TestStats(t *testing.T) {
 	set := testSettings(t)
 	px := New(NewSigner([]byte("0123456789abcdef0123456789abcdef")), set)
 
-	if s := px.Stats(); s.Limit != 20 || s.CacheLimit != 256<<20 || s.InUse != 0 {
+	if s := px.Stats(); s.Limit != 20 || s.CacheLimit != 1024<<20 || s.InUse != 0 {
 		t.Fatalf("start: %+v", s)
 	}
 	k := cacheKey(Payload{U: up.URL + "/a.ts"})
@@ -33,7 +33,7 @@ func TestStats(t *testing.T) {
 		t.Fatal("cached")
 	}
 	s := px.Stats()
-	if s.CacheHits != 1 || s.CacheMisses != 1 || s.CacheEntries != 1 || s.CacheBytes != 10 {
+	if s.CacheHits != 1 || s.CacheMisses != 1 || s.CacheEntries != 1 || s.CacheBytes != 10 || s.CacheHitBytes != 10 || s.CacheStores != 1 || s.CacheRejected != 0 {
 		t.Fatalf("cache: %+v", s)
 	}
 

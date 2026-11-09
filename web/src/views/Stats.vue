@@ -101,9 +101,25 @@ const tiles = computed(() => {
     ['Devices', (t.clients || 0).toLocaleString(), '', 'Different devices (address and player) that used a link'],
     ['Channels', (t.channels || 0).toLocaleString(), '', 'Different channels played'],
   ]
-  if (o.value?.connections) out.splice(1, 0, ['Proxy connections', `${o.value.connections.in_use} / ${o.value.connections.limit}`,
-    o.value.connections.in_use >= o.value.connections.limit ? 'bad' : '', 'Streams the proxy is carrying right now, and the most it allows (Settings > Proxy)'])
   return out
+})
+
+// the segment cache of the proxy (only sent to roles that see the whole server)
+const cacheTiles = computed(() => {
+  const c = o.value?.cache
+  if (!c) return []
+  const asked = c.hits + c.misses
+  const k = o.value.connections
+  return [
+    ['Proxy connections', `${k.in_use} / ${k.limit}`, k.in_use >= k.limit ? 'bad' : '', 'Streams the proxy is carrying right now, and the most it allows (Settings > Proxy)'],
+    ['Cache hit rate', c.limit === 0 ? 'off' : asked ? `${Math.round((c.hits / asked) * 100)}%` : '–', '', 'Segments answered from the cache out of all segment requests since the app started (Settings > Proxy)'],
+    [c.limit === 0 ? 'Cache in use' : `Cache in use (of ${bytes(c.limit)})`, c.limit === 0 ? 'off' : bytes(c.bytes), '', `${c.entries.toLocaleString()} segments held right now; the size is set in Settings > Proxy`],
+    ['Served from cache', bytes(c.hit_bytes), '', 'Video sent to players from the cache instead of the stream server'],
+    ['Prefetched', c.prefetched.toLocaleString(), '', 'Segments fetched ahead of the player'],
+    ['Shared fetches', c.coalesced.toLocaleString(), '', 'Requests that waited for a fetch already running instead of asking the server again'],
+    ['Retries', c.retries.toLocaleString(), '', 'Stream server requests repeated after a temporary failure'],
+    ['Playlist hold-overs', c.holdovers.toLocaleString(), '', 'Playlists served from the last good copy because the server was down'],
+  ]
 })
 
 const addr = (x) => x.ip || 'address not recorded'
@@ -141,6 +157,12 @@ const pickProfile = (id) => setQuery({ profile: id, page: '' })
       <div v-for="t in tiles" :key="t[0]" class="tile" :class="t[2]" :title="t[3]"><span class="lbl">{{ t[0] }}</span><b>{{ t[1] }}</b></div>
     </div>
     <p v-if="o" class="muted small">Numbers cover {{ periodText }}. History is kept for {{ keep }} {{ keep === 1 ? 'day' : 'days' }} (Settings > Stats).</p>
+    <div v-if="cacheTiles.length" class="cache">
+      <h2 class="sub">Proxy <span class="muted small">cache numbers count since the app started</span></h2>
+      <div class="tiles">
+        <div v-for="t in cacheTiles" :key="t[0]" class="tile" :class="t[2]" :title="t[3]"><span class="lbl">{{ t[0] }}</span><b>{{ t[1] }}</b></div>
+      </div>
+    </div>
 
     <div class="card">
       <h2>Watching now</h2>
@@ -266,12 +288,15 @@ const pickProfile = (id) => setQuery({ profile: id, page: '' })
 .small { font-size:13px; margin:6px 0; }
 .note { padding:8px 12px; border:1px solid var(--line); border-radius:8px; background:var(--panel); margin:0 0 12px; }
 .note.warn { border-color:var(--warn); }
-.tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px; }
+.tiles { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:12px; }
+@media (max-width:560px) { .tiles { grid-template-columns:repeat(2, minmax(0, 1fr)); } }
 .tile { background:var(--panel); border:1px solid var(--line); border-left:3px solid var(--line); border-radius:10px; padding:12px 14px; }
 .tile .lbl { display:block; font-size:12px; color:var(--muted); }
 .tile b { display:block; font-size:22px; line-height:1.2; font-variant-numeric:tabular-nums; }
 .tile.ok { border-left-color:var(--ok); } .tile.bad { border-left-color:var(--bad); }
 .card h2 { margin:0 0 8px; }
+.cache { margin-bottom:16px; }
+h2.sub { margin:16px 0 8px; font-size:15px; } h2.sub span { font-weight:400; margin-left:6px; }
 .rows { list-style:none; margin:0; padding:0; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
 .rows li { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:8px 12px; border-bottom:1px solid var(--line); }
 .rows li:last-child { border-bottom:0; }

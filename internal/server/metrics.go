@@ -179,6 +179,13 @@ func (s *Server) collect() *metrics.Set {
 	m.Gauge("iptv_proxy_cache_entries", "Segments in the cache.", float64(px.CacheEntries))
 	m.Counter("iptv_proxy_cache_hits_total", "Segments served from the cache.", float64(px.CacheHits))
 	m.Counter("iptv_proxy_cache_misses_total", "Segments that were not in the cache.", float64(px.CacheMisses))
+	m.Counter("iptv_proxy_cache_hit_bytes_total", "Bytes served from the segment cache.", float64(px.CacheHitBytes))
+	m.Counter("iptv_proxy_cache_stores_total", "Segments put in the cache.", float64(px.CacheStores))
+	m.Counter("iptv_proxy_cache_rejected_total", "Segments not cached because the cache was full.", float64(px.CacheRejected))
+	m.Counter("iptv_proxy_prefetched_segments_total", "Segments fetched ahead of the player.", float64(px.Prefetched))
+	m.Counter("iptv_proxy_coalesced_requests_total", "Segment requests that waited for a fetch already running instead of asking the server again.", float64(px.Coalesced))
+	m.Counter("iptv_proxy_upstream_retries_total", "Upstream requests repeated after a temporary failure.", float64(px.Retries))
+	m.Counter("iptv_proxy_playlist_holdovers_total", "Playlists served from the last good copy because the server was down.", float64(px.Holdovers))
 
 	s.collectHealth(m)
 	s.collectActivity(m, perProfile)

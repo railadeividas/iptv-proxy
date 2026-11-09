@@ -35,7 +35,10 @@ func TestRetriesFollowTheSetting(t *testing.T) {
 	px := New(NewSigner([]byte("0123456789abcdef0123456789abcdef")), set)
 	set.Apply(map[string]any{"upstream_retry_delay_ms": 0.0})
 	if code, body := signedGet(t, px, Payload{U: up.URL + "/a.ts"}); code != 200 || body != "seg" || hits.Load() != 2 {
-		t.Fatalf("one retry by default: %d %q hits=%d", code, body, hits.Load())
+		t.Fatalf("retries on by default: %d %q hits=%d", code, body, hits.Load())
+	}
+	if px.Stats().Retries != 1 {
+		t.Fatalf("the retry is counted: %+v", px.Stats())
 	}
 	hits.Store(0)
 	set.Apply(map[string]any{"upstream_retries": 0.0})
@@ -75,6 +78,9 @@ func TestPlaylistHoldover(t *testing.T) {
 	if code != 200 || !strings.Contains(body, "/x/") {
 		t.Fatalf("held copy expected: %d %q", code, body)
 	}
+	if px.Stats().Holdovers != 1 {
+		t.Fatalf("the held copy is counted: %+v", px.Stats())
+	}
 	// serving the held copy must not renew it, and the setting applies live
 	set.Apply(map[string]any{"playlist_holdover_seconds": 0.0})
 	if code, _ := signedGet(t, px, pl); code != 502 {
@@ -110,10 +116,11 @@ func TestPrefetchFillsTheCache(t *testing.T) {
 	px := New(NewSigner([]byte("0123456789abcdef0123456789abcdef")), set)
 	pl := Payload{U: base + "/live.m3u8"}
 
+	set.Apply(map[string]any{"segment_prefetch_count": 0.0})
 	signedGet(t, px, pl)
 	time.Sleep(100 * time.Millisecond)
 	if segHits.Load() != 0 {
-		t.Fatal("prefetch is off by default")
+		t.Fatal("0 turns prefetch off")
 	}
 	set.Apply(map[string]any{"segment_prefetch_count": 2.0})
 	signedGet(t, px, pl)
@@ -126,6 +133,12 @@ func TestPrefetchFillsTheCache(t *testing.T) {
 	n := segHits.Load()
 	if code, body := signedGet(t, px, Payload{U: base + "/s3.ts"}); code != 200 || body != "data-/s3.ts" || segHits.Load() != n {
 		t.Fatalf("player must be served from the cache: %d %q", code, body)
+	}
+	for i := 0; i < 200 && px.Stats().Prefetched < 2; i++ {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if st := px.Stats(); st.Prefetched != 2 || st.CacheHitBytes != uint64(len("data-/s3.ts")) {
+		t.Fatalf("prefetch and cache bytes are counted: %+v", st)
 	}
 }
 
@@ -181,5 +194,28 @@ func TestPrefetchRespectsThePerServerLimit(t *testing.T) {
 	px.hosts.mu.Unlock()
 	if leaked != 0 {
 		t.Fatal("request counts leaked")
+	}
+}
+
+func TestPrefetchCountsAsUpstreamRequests(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".m3u8") {
+			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+			w.Write([]byte("#EXTM3U\n#EXTINF:6,\ns1.ts\n#EXTINF:6,\ns2.ts\n"))
+			return
+		}
+		w.Header().Set("Content-Type", "video/mp2t")
+		w.Write([]byte("data"))
+	}))
+	defer up.Close()
+	set := testSettings(t)
+	px := New(NewSigner([]byte("0123456789abcdef0123456789abcdef")), set)
+	set.Apply(map[string]any{"segment_prefetch_count": 2.0})
+	signedGet(t, px, Payload{U: up.URL + "/live.m3u8"})
+	for i := 0; i < 200 && px.Stats().UpstreamOK < 3; i++ {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if s := px.Stats(); s.UpstreamOK != 3 || s.UpstreamErrors != 0 { // the playlist and the two segments
+		t.Fatalf("upstream requests: %+v", s)
 	}
 }

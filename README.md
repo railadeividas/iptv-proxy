@@ -101,7 +101,7 @@ WebSocket (sync and guide progress, stream status, edits made in another tab) an
 - **Proxy.** HLS (master and media playlists, keys, init segments, alternate audio and subtitles) and DASH (`BaseURL`,
   `SegmentTemplate`, `SegmentList`) manifests are rewritten so everything flows through HMAC-signed links (`/x/…`, and `/xd/…` for
   DASH directories). The proxy cannot be used to fetch arbitrary URLs. Range requests, `HEAD`, compressed manifests, CORS,
-  MIME fixes, a short segment cache, retries, last-playlist hold-over, optional segment prefetch and a connection limit are built in; cookies and credentials are dropped on cross-host
+  MIME fixes, a short segment cache, retries, last-playlist hold-over, segment prefetch and a connection limit are built in; cookies and credentials are dropped on cross-host
   redirects. There is no transcoding or recording. Limits and timeouts are settings.
 - **Compatibility profiles.** Per profile, force a VLC, browser or ExoPlayer User-Agent for streams that don't define one.
 
