@@ -205,10 +205,12 @@ export function change(cur, prev, on) {
 }
 export const pct = (v) => Math.round(v) + '%'
 
+export const REFRESH_MS = 10000 // how often a tab reloads by itself
+
 // Loads data for a tab: now, when the watched values change, when the server says activity happened (at most every few
 // seconds) and optionally on a timer. fn(isCurrent) fetches and assigns; a slower, older answer must not overwrite a newer one,
 // so check isCurrent() before assigning. Old data stays on screen while the new arrives.
-export function useLoader(fn, { deps = null, every = 0 } = {}) {
+export function useLoader(fn, { deps = null, every = REFRESH_MS } = {}) {
   const loaded = ref(false)
   let seq = 0
   async function run() {
@@ -218,8 +220,11 @@ export function useLoader(fn, { deps = null, every = 0 } = {}) {
   }
   if (deps) watch(deps, run)
   let timer
-  onMounted(() => { run(); if (every) timer = setInterval(run, every) })
-  onUnmounted(() => clearInterval(timer))
+  // A running session grows without any event, and a "last 24 hours" window moves with the clock, so every tab also reloads on a
+  // timer (not while the browser tab is hidden, and at once when it comes back).
+  const tick = () => { if (!document.hidden) run() }
+  onMounted(() => { run(); if (every) timer = setInterval(tick, every); document.addEventListener('visibilitychange', tick) })
+  onUnmounted(() => { clearInterval(timer); document.removeEventListener('visibilitychange', tick) })
   const soon = throttle(run, 3000)
   useLive({ activity: soon, profiles: soon })
   return { loaded, reload: run }

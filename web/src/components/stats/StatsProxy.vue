@@ -22,7 +22,7 @@ useLoader(async (cur) => {
   const tl = await api.get('/stats/timeline?' + q.params({ step: sm.bucket }))
   if (!cur()) return
   t.value = tl; hosts.value = hs.items; samples.value = sm
-}, { deps: () => [q.rangeKey.value, q.stepKey.value, q.profile.value] })
+}, { deps: () => [q.rangeKey.value, q.stepKey.value, q.profile.value], every: 5000 })
 
 const tiles = computed(() => {
   const c = props.o?.cache, k = props.o?.connections
