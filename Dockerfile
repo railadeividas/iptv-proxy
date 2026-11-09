@@ -7,7 +7,7 @@ COPY web/ .
 RUN npm run build
 
 # 2. Go binary (UI embedded via go:embed)
-FROM golang:1.26.10-alpine AS app
+FROM golang:1.27.3-alpine AS app
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
