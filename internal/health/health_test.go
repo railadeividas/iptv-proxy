@@ -73,7 +73,7 @@ func TestFailureThresholdAndRetry(t *testing.T) {
 	}
 	// a viewer's failed playback marks it at once
 	addStream(t, st, 0, "D", "http://d/1", store.StatusOK, 0)
-	st.MarkPlayback("http://d/1", false)
+	st.MarkPlayback("http://d/1", false, 0)
 	st.DB.QueryRow(`SELECT status FROM streams WHERE url='http://d/1'`).Scan(&bs)
 	if bs != store.StatusDead {
 		t.Fatal("playback failure is immediate")

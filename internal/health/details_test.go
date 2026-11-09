@@ -95,6 +95,34 @@ func TestDetails(t *testing.T) {
 	}
 }
 
+// One failed check does not flip a working stream (the history shows it, the status stays working) until the failures in a row reach the setting.
+func TestFailedCheckKeepsAWorkingStreamWorkingUntilTheThreshold(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	st.DB.Exec(`INSERT INTO streams(url,ck,src,status) VALUES('http://x/1','A@SD','iptv-org',1)`)
+	status := func() (int, int) {
+		var s, f int
+		st.DB.QueryRow(`SELECT status, fail_count FROM streams WHERE url='http://x/1'`).Scan(&s, &f)
+		return s, f
+	}
+	st.RecordProbe(store.Probe{URL: "http://x/1", Reason: "timeout"}, 2, 50)
+	if s, f := status(); s != store.StatusOK || f != 1 {
+		t.Fatalf("first failure: status %d, %d failed", s, f)
+	}
+	st.RecordProbe(store.Probe{URL: "http://x/1", OK: true}, 2, 50)
+	st.RecordProbe(store.Probe{URL: "http://x/1", Reason: "timeout"}, 2, 50)
+	if s, f := status(); s != store.StatusOK || f != 1 {
+		t.Fatalf("a success in between starts the count again: status %d, %d failed", s, f)
+	}
+	st.RecordProbe(store.Probe{URL: "http://x/1", Reason: "timeout"}, 2, 50)
+	if s, _ := status(); s != store.StatusDead {
+		t.Fatalf("two in a row: not working, got %d", s)
+	}
+}
+
 func TestNextCheck(t *testing.T) {
 	c, st, set := newTest(t)
 	now := time.Now().Unix()
@@ -172,5 +200,43 @@ func TestChannelStatesAddUp(t *testing.T) {
 	d := c.Details()
 	if d.Totals.Excluded != 3 || d.Totals.Bad != 1 || d.Totals.OK != 2 || d.Totals.Streams != 10 {
 		t.Fatalf("stream totals: %+v", d.Totals)
+	}
+}
+
+// A viewer's playback changes the status too, so it must show in the history (it used to flip a stream back to working with no trace),
+// but only when the status changes: a viewer retrying a dead stream or playing a working one does not fill the history.
+func TestPlaybackShowsInTheHistoryWhenItChangesTheStatus(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	st.DB.Exec(`INSERT INTO streams(url,ck,src,status) VALUES('http://x/1','A@SD','iptv-org',1)`)
+	rows := func() (n int, last string) {
+		st.DB.QueryRow(`SELECT COUNT(*), COALESCE((SELECT reason FROM health_checks ORDER BY at DESC, id DESC LIMIT 1),'') FROM health_checks`).Scan(&n, &last)
+		return
+	}
+	st.MarkPlayback("http://x/1", true, 50) // working and clean: nothing to explain
+	if n, _ := rows(); n != 0 {
+		t.Fatalf("a normal playback is not history: %d rows", n)
+	}
+	st.RecordProbe(store.Probe{URL: "http://x/1", Reason: "Connection refused"}, 3, 50) // still working, one failure
+	st.MarkPlayback("http://x/1", true, 50)                                             // the status stays working: not a change
+	if n, _ := rows(); n != 1 {
+		t.Fatalf("working stays working: %d rows (the probe only)", n)
+	}
+	for i := 0; i < 5; i++ {
+		st.MarkPlayback("http://x/1", false, 50) // the stream goes down, and the viewer retries
+	}
+	if n, last := rows(); n != 2 || last != "Playback failed" {
+		t.Fatalf("one row when it went down, not one per retry: %d rows, last %q", n, last)
+	}
+	st.MarkPlayback("http://x/1", true, 50) // not working -> working
+	if n, last := rows(); n != 3 || last != "Played by a viewer" {
+		t.Fatalf("the status changed back: %d rows, last %q", n, last)
+	}
+	st.MarkPlayback("http://x/1", false, 0) // history switched off: nothing is written
+	if n, _ := rows(); n != 3 {
+		t.Fatalf("history off: %d rows", n)
 	}
 }

@@ -51,13 +51,33 @@ func (s *Store) logExec(what string) func(sql.Result, error) {
 	}
 }
 
-// MarkPlayback records what happened when a viewer tried a stream: a failure
-// marks it not working at once, a success clears its failures.
-func (s *Store) MarkPlayback(url string, ok bool) {
+// MarkPlayback records what happened when a viewer tried a stream: a failure marks it not working at once, a success marks it
+// working and clears its failures. When the status itself changes (not working or not checked yet becomes working, or anything
+// becomes not working) it is also put in the channel's check history, so the history explains the status; a viewer that keeps
+// retrying a dead stream, or plays a working one, does not fill it. keepPerChannel is the history setting (0 = no history).
+func (s *Store) MarkPlayback(url string, ok bool, keepPerChannel int) {
 	now := time.Now().Unix()
+	var status int
+	_ = s.DB.QueryRow(`SELECT status FROM streams WHERE url=? LIMIT 1`, url).Scan(&status)
+	record := func(good bool, reason string) {
+		if keepPerChannel <= 0 {
+			return
+		}
+		v := 0
+		if good {
+			v = 1
+		}
+		s.logExec("record playback history")(s.DB.Exec(`INSERT INTO health_checks(ck,url,at,ok,reason,ms) SELECT DISTINCT ck,?,?,?,?,0 FROM streams WHERE url=?`, url, now, v, reason, url))
+	}
 	if ok {
+		if status != StatusOK {
+			record(true, "Played by a viewer")
+		}
 		_, _ = s.DB.Exec(`UPDATE streams SET status=?, fail_count=0, fail_since=0, fail_reason='', checked_at=? WHERE url=?`, StatusOK, now, url)
 	} else {
+		if status != StatusDead {
+			record(false, "Playback failed")
+		}
 		_, _ = s.DB.Exec(`UPDATE streams SET status=?, fail_count=fail_count+1, fail_reason='Playback failed', checked_at=?, `+failSince+` WHERE url=?`, StatusDead, now, now, url)
 	}
 	s.notify("streams")

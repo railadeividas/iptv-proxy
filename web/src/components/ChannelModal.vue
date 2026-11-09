@@ -118,7 +118,7 @@ const when = (t) => new Date(t * 1000).toLocaleString()
                 <td class="nowrap">{{ when(c.at) }}</td>
                 <td>{{ c.host }}</td>
                 <td><span class="badge" :class="c.ok ? 'good' : 'bad'">{{ c.ok ? 'working' : 'failed' }}</span></td>
-                <td>{{ code(c) }}<span v-if="streamFormat(c.reason)" class="muted"> · {{ streamFormat(c.reason) }}</span><span v-if="!code(c) && !c.ok" class="muted">{{ c.reason }}</span></td>
+                <td>{{ code(c) }}<span v-if="streamFormat(c.reason)" class="muted"> · {{ streamFormat(c.reason) }}</span><span v-if="!code(c) && (!c.ok || c.reason)" class="muted">{{ c.reason }}</span></td>
                 <td class="right nowrap">{{ c.ms }} ms</td>
               </tr>
             </tbody>

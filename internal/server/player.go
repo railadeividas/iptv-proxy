@@ -193,11 +193,11 @@ func (s *Server) channel(w http.ResponseWriter, r *http.Request) {
 		up, err := s.px.OpenLive(r.Context(), r, proxy.Payload{U: st.URL, R: st.Referrer, A: ua, P: p.ID, C: ck})
 		if err != nil {
 			if r.Context().Err() == nil {
-				s.st.MarkPlayback(st.URL, false)
+				s.st.MarkPlayback(st.URL, false, s.set.Int("health_history_per_channel"))
 			}
 			continue
 		}
-		s.st.MarkPlayback(st.URL, true)
+		s.st.MarkPlayback(st.URL, true, s.set.Int("health_history_per_channel"))
 		if r.Method == http.MethodGet { // a HEAD probe is not someone watching
 			live := s.act.Begin(r, p.ID, p, ck, activity.Proxy, activity.HostOf(st.URL))
 			defer live.End()
