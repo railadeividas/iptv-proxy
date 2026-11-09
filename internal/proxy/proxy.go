@@ -41,7 +41,9 @@ type Proxy struct {
 	inUse  atomic.Int64 // open proxied connections
 	cache  *segCache
 	hosts  hostCount
-	shares shareSet // live streams shared between viewers (share.go)
+	shares shareSet  // live streams shared between viewers (share.go)
+	pl     plCache   // playlists shared for a moment (plcache.go)
+	dash   dashIndex // which DASH representations viewers use (dash.go)
 
 	upstreamOK, upstreamErr atomic.Uint64 // requests to streams that worked / failed (not counting players that left)
 	retries, holdovers      atomic.Uint64 // repeated upstream requests; playlists served from the last good copy
@@ -200,6 +202,7 @@ type Stats struct {
 	SharedStreams              int // live streams shared between viewers right now
 	SharedViewers              int
 	SharedJoins                uint64 // viewers that joined a stream somebody else had opened
+	PlaylistHits               uint64 // playlists handed out from a copy instead of asking the server
 }
 
 func (p *Proxy) Stats() Stats {
@@ -208,12 +211,11 @@ func (p *Proxy) Stats() Stats {
 		CacheHits: p.cache.hits.Load(), CacheMisses: p.cache.misses.Load(), UpstreamOK: p.upstreamOK.Load(), UpstreamErrors: p.upstreamErr.Load(),
 		CacheHitBytes: p.cache.hitBytes.Load() + p.shares.bytes.Load(), CacheStores: p.cache.stores.Load(), CacheRejected: p.cache.rejected.Load(),
 		Prefetched: p.prefetched.Load(), Coalesced: p.coalesced.Load(), Retries: p.retries.Load(), Holdovers: p.holdovers.Load(),
-		SharedStreams: int(p.shares.streams.Load()), SharedViewers: int(p.shares.viewers.Load()), SharedJoins: p.shares.joins.Load()}
+		SharedStreams: int(p.shares.streams.Load()), SharedViewers: int(p.shares.viewers.Load()), SharedJoins: p.shares.joins.Load(), PlaylistHits: p.pl.hits.Load()}
 }
 
-// Open requests the upstream URL with the payload's headers. Errors (including
-// HTTP >= 400 and HTML responses) let callers fall back to another stream.
-func (p *Proxy) Open(ctx context.Context, in *http.Request, pl Payload) (*Upstream, error) {
+// openFresh requests the upstream URL with the payload's headers, retrying temporary failures (see Open for the cached way).
+func (p *Proxy) openFresh(ctx context.Context, in *http.Request, pl Payload) (*Upstream, error) {
 	var up *Upstream
 	var err error
 	for try := 0; ; try++ {
@@ -366,8 +368,11 @@ func (p *Proxy) Respond(w http.ResponseWriter, in *http.Request, up *Upstream, p
 			if p.set.Int("playlist_holdover_seconds") > 0 {
 				p.cache.hold(cacheKey(up.Payload), heldManifest{kind: up.Kind, manifest: up.Manifest, url: up.URL, at: time.Now()})
 			}
-			if up.Kind == "hls" {
+			switch up.Kind {
+			case "hls":
 				p.prefetch(up)
+			case "dash":
+				p.prefetchDASH(up)
 			}
 		}
 		var out []byte
@@ -522,6 +527,7 @@ func (p *Proxy) ServeSigned(w http.ResponseWriter, r *http.Request, prefix, pub 
 			target += "?" + r.URL.RawQuery
 		}
 		pl.U = target
+		p.dash.learn(cacheKey(pl)) // which quality of a DASH stream this viewer plays
 	} else if pl.D {
 		http.Error(w, "invalid link", http.StatusForbidden)
 		return

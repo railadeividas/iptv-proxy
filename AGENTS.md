@@ -206,6 +206,14 @@ go vet ./... && go test ./...
   stream URL.
 - Sync and refresh jobs keep the last good data when they fail.
 - Proxy links are HMAC-signed; never add an endpoint that fetches arbitrary URLs.
+- **Playlist cache** (`plcache.go`): `Proxy.Open` hands a manifest fetched a moment ago to the next viewer (one fetch for concurrent ones). The copy is
+  the bytes exactly as the server sent them and every viewer still gets it rewritten, so profile and channel ids in the links stay theirs;
+  it never lives longer than half of the playlist's own update interval (`playlistTTL`). A cached `Upstream` has no `resp`, so Respond neither
+  renews the hold-over nor prefetches for it. The fresh path is `openFresh`.
+- **DASH prefetch** (`dash.go`): live MPDs with a `SegmentTimeline` get their newest segments fetched like HLS (`segment_prefetch_count`). The
+  cache key is the real upstream directory (`dirString`, shared with the signed directory link) plus the expanded media path, so a prefetched
+  segment is found by the player's `/xd/` request. Several qualities: only the one viewers ask for is fetched (learned in `ServeSigned`);
+  templates that need the stream clock are left alone.
 - **Shared live streams** (`internal/proxy/share.go`): the channel endpoint opens streams with `Proxy.OpenLive`, never segments or playlists
   (those keep `Open`). A continuous MPEG-TS response (no length, three sync bytes in the first packets) is read once by a hub into a ring
   buffer and every viewer of the same URL, Referer and User-Agent reads from it; anything else goes to its viewer unchanged. The hub owns

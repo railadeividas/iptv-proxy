@@ -67,7 +67,8 @@ func TestPlaylistHoldover(t *testing.T) {
 	}))
 	defer up.Close()
 	set := testSettings(t)
-	set.Apply(map[string]any{"upstream_retries": 0.0})
+	// the playlist cache would hand out the second playlist itself; this test is about the server being down
+	set.Apply(map[string]any{"upstream_retries": 0.0, "playlist_cache_seconds": 0.0})
 	px := New(NewSigner([]byte("0123456789abcdef0123456789abcdef")), set)
 	pl := Payload{U: up.URL + "/live.m3u8"}
 	if code, _ := signedGet(t, px, pl); code != 200 {
@@ -116,7 +117,7 @@ func TestPrefetchFillsTheCache(t *testing.T) {
 	px := New(NewSigner([]byte("0123456789abcdef0123456789abcdef")), set)
 	pl := Payload{U: base + "/live.m3u8"}
 
-	set.Apply(map[string]any{"segment_prefetch_count": 0.0})
+	set.Apply(map[string]any{"segment_prefetch_count": 0.0, "playlist_cache_seconds": 0.0}) // these requests must each reach the server
 	signedGet(t, px, pl)
 	time.Sleep(100 * time.Millisecond)
 	if segHits.Load() != 0 {
@@ -165,7 +166,7 @@ func TestPrefetchRespectsThePerServerLimit(t *testing.T) {
 	defer close(hold)
 	set := testSettings(t)
 	px := New(NewSigner([]byte("0123456789abcdef0123456789abcdef")), set)
-	set.Apply(map[string]any{"segment_prefetch_count": 2.0, "upstream_per_host_requests": 1.0})
+	set.Apply(map[string]any{"segment_prefetch_count": 2.0, "upstream_per_host_requests": 1.0, "playlist_cache_seconds": 0.0})
 
 	// a player's stream holds the only request the server is allowed
 	long, err := px.Open(t.Context(), nil, Payload{U: up.URL + "/long"})

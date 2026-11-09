@@ -46,7 +46,8 @@ func (rw *rewriter) fileURL(u *url.URL) string {
 	return rw.pub + "/x/" + tok + "/" + cosmeticName(u)
 }
 
-func (rw *rewriter) dirURL(u *url.URL) string {
+// dirString is the directory of u as it goes into a signed directory link: no query, no fragment, a trailing slash.
+func dirString(u *url.URL) string {
 	d := *u
 	d.RawQuery, d.Fragment = "", ""
 	if d.Path == "" {
@@ -56,7 +57,11 @@ func (rw *rewriter) dirURL(u *url.URL) string {
 		d.Path = d.Path[:strings.LastIndex(d.Path, "/")+1]
 		d.RawPath = ""
 	}
-	tok := rw.signer.Encode(Payload{U: d.String(), R: rw.ref, A: rw.ua, E: rw.exp, D: true, P: rw.prof, C: rw.ck})
+	return d.String()
+}
+
+func (rw *rewriter) dirURL(u *url.URL) string {
+	tok := rw.signer.Encode(Payload{U: dirString(u), R: rw.ref, A: rw.ua, E: rw.exp, D: true, P: rw.prof, C: rw.ck})
 	return rw.pub + "/xd/" + tok + "/"
 }
 
