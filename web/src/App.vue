@@ -83,8 +83,11 @@ header nav a { color:var(--muted); padding:6px 12px; border-radius:6px; white-sp
   header nav::-webkit-scrollbar { display:none; }
 }
 header nav a.router-link-active { color:var(--text); font-weight:500; box-shadow:inset 0 -1px 0 var(--accent); }
-main { max-width:1240px; margin:0 auto; padding:20px; }
-.site { max-width:1240px; margin:0 auto 0; padding:0 20px; font-size:13px; color:var(--muted); display:flex; align-items:center; justify-content:space-between; gap:8px 16px; flex-wrap:wrap; }
+/* short pages: the footer sticks to the bottom of the window (not on login/setup, which have no footer) */
+#app:has(> footer.site) { min-height:100vh; min-height:100dvh; display:flex; flex-direction:column; }
+#app:has(> footer.site) > main { flex:1 0 auto; }
+main { box-sizing:border-box; width:100%; max-width:1240px; margin:0 auto; padding:20px; }
+.site { box-sizing:border-box; width:100%; max-width:1240px; margin:0 auto 0; padding:0 20px; font-size:13px; color:var(--muted); display:flex; align-items:center; justify-content:space-between; gap:8px 16px; flex-wrap:wrap; }
 .site::before { content:''; flex:1 0 100%; height:1px; background:var(--line); }
 .site .flinks { display:flex; align-items:center; gap:24px; flex-wrap:wrap; margin-left:auto; padding:10px 0 16px; }
 .site .fver { padding:10px 0 16px; font-variant-numeric:tabular-nums; }
