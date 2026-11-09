@@ -4,7 +4,7 @@ import Scope from './Scope.vue'
 import { ref, computed } from 'vue'
 import { api } from '../../api'
 import { rel, dur, bytes } from '../../util'
-import { useStatsQuery, useLoader, usePaging, METRICS, change } from '../../stats'
+import { useStatsQuery, useLoader, usePaging, history, METRICS, change } from '../../stats'
 import BarList from './BarList.vue'
 import Tiles from './Tiles.vue'
 import Pager from '../Pager.vue'
@@ -28,7 +28,7 @@ useLoader(async (ok) => {
   ])
   if (!ok()) return
   top.value = a.items; cur.value = c.items; before.value = b && new Map(b.items.map((x) => [x.key, x])); prevTotal.value = b ? b.total : 0; list.value = l; ready.value = true
-}, { deps: () => [q.rangeKey.value, q.profile.value, q.metric.value, pg.page.value, pg.size.value] })
+}, { deps: () => [q.rangeKey.value, q.canCompare.value, q.profile.value, q.metric.value, pg.page.value, pg.size.value] })
 
 const val = (x) => M.value.pick(x)
 const pages = computed(() => Math.max(1, Math.ceil(list.value.total / pg.size.value)))
@@ -59,6 +59,7 @@ const avg = (x) => (x.proxy ? dur(x.seconds / x.proxy) : '–')
   <Tiles :items="tiles" :cols="4" />
   <div class="card"><div class="chead"><h2>Top channels<Scope /></h2><MeasureSwitch /></div><p class="muted small">By {{ M.unit }}<template v-if="before">, with the change against the period before</template></p>
     <BarList :rows="topRows" :fmt="M.fmt" :change="!!before" empty="Nothing was played in this period." /></div>
+  <p v-if="q.compareBlocked.value" class="muted small nohist">Rising and falling need the period before, and history is only kept for {{ history }} days.</p>
   <div v-if="before" class="card-row">
     <div class="card"><div class="chead"><h2>Rising<Scope /></h2><MeasureSwitch /></div><p class="muted small">Gained the most against the period before</p>
       <BarList :rows="movers.up" :fmt="M.fmt" empty="No channel gained." /></div>
@@ -100,6 +101,7 @@ const avg = (x) => (x.proxy ? dur(x.seconds / x.proxy) : '–')
 .t td.r, .t th.r { text-align:right; }
 .t td .small { margin:2px 0 0; }
 .t td:last-child, .t th:last-child { padding-left:14px; }
+.nohist { margin:0; }
 .block { display:block; }
 .nowrap { white-space:nowrap; }
 </style>

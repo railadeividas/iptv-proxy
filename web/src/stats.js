@@ -77,7 +77,15 @@ export function useStatsQuery() {
     if (!absFrom.value) return RANGES.find((r) => r[0] === rangeKey.value)[1]
     return `${fmtStamp(absFrom.value)} – ${absTo.value ? fmtStamp(absTo.value) : 'now'}`
   })
-  const canCompare = computed(() => rangeKey.value !== 'all')
+  // How much of the period before is still stored: 'full', 'partial' (it reaches past the oldest stored day) or 'none'
+  const coverage = computed(() => {
+    if (rangeKey.value === 'all') return 'full'
+    const r = range(), span = r.to - r.from
+    const oldest = Math.floor(Date.now() / 1000) - history.value * 86400
+    return r.from <= oldest ? 'none' : r.from - span < oldest ? 'partial' : 'full'
+  })
+  const canCompare = computed(() => rangeKey.value !== 'all' && coverage.value !== 'none')
+  const compareBlocked = computed(() => rangeKey.value !== 'all' && coverage.value === 'none') // nothing to compare with: not kept that far back
   const stepKey = computed(() => (STEPS[route.query.step] ? route.query.step : ''))
   // one or several profiles, ids separated by commas in the URL; none = all of them
   const selected = computed(() => [...new Set(String(route.query.profile || '').split(',').map((n) => parseInt(n)).filter((n) => n > 0))])
@@ -101,7 +109,7 @@ export function useStatsQuery() {
     if (shift) p.set('shift', 1)
     return p
   }
-  return { rangeKey, range, rangeLabel, canCompare, stepKey, profile, selected, metric, split, type, compare, tab, setQuery, params, route }
+  return { rangeKey, range, rangeLabel, canCompare, compareBlocked, coverage, stepKey, profile, selected, metric, split, type, compare, tab, setQuery, params, route }
 }
 
 // ---- series ----
@@ -162,8 +170,26 @@ export function perBucket(t, metric, rows = t.rows) {
 // rows for StatChart: [{l, tt, v: {seriesKey: value}}]
 export function chartRows(t, metric, series) {
   const out = Array.from({ length: t.n }, (_, i) => ({ l: bucketLabel(t, i), tt: bucketTitle(t, i), v: Object.fromEntries(series.keys.map((k) => [k, 0])) }))
-  for (const r of t.rows) out[r.i].v[series.keyOf(r)] += METRICS[metric].pick(r)
+  // A row for a series the chart does not know yet (a profile created a moment ago, before the page learned of it) must not
+  // be lost: it is counted under its own key, which completeSeries then adds to the chart.
+  const extra = new Set()
+  for (const r of t.rows) {
+    const k = series.keyOf(r)
+    if (!(k in out[r.i].v)) { extra.add(k); for (const o of out) o.v[k] = 0 }
+    out[r.i].v[k] += METRICS[metric].pick(r)
+  }
   return out
+}
+// the series plus any key that only showed up in the data (shown as "Other")
+export function completeSeries(series, rows) {
+  const extra = [...new Set(rows.flatMap((r) => Object.keys(r.v)))].filter((k) => !series.keys.includes(k))
+  if (!extra.length) return series
+  return {
+    ...series,
+    keys: [...series.keys, ...extra],
+    names: { ...series.names, ...Object.fromEntries(extra.map((k) => [k, k === OTHER ? 'Other profiles' : k])) },
+    colors: { ...series.colors, ...Object.fromEntries(extra.map((k) => [k, 'var(--so)'])) },
+  }
 }
 // a line of plain numbers per bucket as chart rows
 export function numberRows(t, values, key = 'n') {

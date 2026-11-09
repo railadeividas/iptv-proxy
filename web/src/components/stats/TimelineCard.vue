@@ -3,7 +3,7 @@ import MeasureSwitch from './MeasureSwitch.vue'
 import Scope from './Scope.vue'
 import { ref, computed } from 'vue'
 import StatChart from './StatChart.vue'
-import { useStatsQuery, bucketWord, METRICS, axisOf, seriesFor, chartRows, perBucket, maxOf } from '../../stats'
+import { useStatsQuery, history, bucketWord, METRICS, axisOf, seriesFor, chartRows, completeSeries, perBucket, maxOf } from '../../stats'
 
 // The main chart: the chosen measure over time, as bars, area or lines, optionally split and set against the previous period.
 // t / prev are /api/stats/timeline answers.
@@ -12,8 +12,9 @@ const q = useStatsQuery()
 const table = ref(false)
 
 const M = computed(() => METRICS[q.metric.value])
-const series = computed(() => seriesFor(q.split.value, props.profiles, q.metric.value, q.selected.value))
-const rows = computed(() => (props.t ? chartRows(props.t, q.metric.value, series.value) : []))
+const base = computed(() => seriesFor(q.split.value, props.profiles, q.metric.value, q.selected.value))
+const rows = computed(() => (props.t ? chartRows(props.t, q.metric.value, base.value) : []))
+const series = computed(() => completeSeries(base.value, rows.value))
 const prevValues = computed(() => (q.compare.value && props.prev ? perBucket(props.prev, q.metric.value) : null))
 const ax = computed(() => axisOf(q.metric.value, maxOf(rows.value, series.value.keys, q.type.value !== 'line', prevValues.value || [])))
 const total = (r) => series.value.keys.reduce((a, k) => a + r.v[k], 0)
@@ -32,10 +33,12 @@ const per = computed(() => (props.t ? `per ${bucketWord(props.t.bucket)}` : ''))
         <select :value="q.split.value" aria-label="Split by" @change="q.setQuery({ split: $event.target.value === 'profile' ? '' : $event.target.value })">
           <option value="profile">By profile</option><option value="mode">Proxy and redirect</option><option value="none">No split</option>
         </select>
-        <label v-if="q.canCompare.value" class="chk"><input type="checkbox" :checked="q.compare.value" @change="q.setQuery({ compare: $event.target.checked ? '1' : '' })"> Compare with the period before</label>
+        <span v-if="q.compareBlocked.value" class="muted small nocmp" :title="`History is kept for ${history} days`">No earlier history to compare with</span>
+        <label v-else-if="q.canCompare.value" class="chk"><input type="checkbox" :checked="q.compare.value" @change="q.setQuery({ compare: $event.target.checked ? '1' : '' })"> Compare with the period before</label>
         <button type="button" :class="{ on: table }" @click="table = !table">{{ table ? 'Chart only' : 'Table' }}</button>
       </div>
     </div>
+    <p v-if="prevValues && q.coverage.value === 'partial'" class="muted small partial">The period before reaches past the {{ history }} days of stored history, so its numbers are incomplete.</p>
     <div v-if="series.keys.length > 1 || prevValues" class="legend">
       <span v-for="k in series.keys.length > 1 ? series.keys : []" :key="k"><i :style="{ background: series.colors[k] }"></i>{{ series.names[k] }}</span>
       <span v-if="prevValues"><i class="dash"></i>Period before</span>
@@ -61,6 +64,8 @@ const per = computed(() => (props.t ? `per ${bucketWord(props.t.bucket)}` : ''))
 .head { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px; }
 .head h2 { margin:0; }
 .ctl { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.partial { margin:0 0 8px; }
+.nocmp { max-width:220px; line-height:1.2; }
 .chk { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); }
 button.on { border-color:var(--accent); }
 .legend { display:flex; flex-wrap:wrap; gap:4px 14px; margin:0 0 8px; font-size:12px; }
