@@ -295,8 +295,8 @@ location / {
 
 - **CI** (`.github/workflows/ci.yml`) builds the UI, runs `go vet` and `go test`, and builds the binary on every pull request and
   push to `main`.
-- **Publish image** (`.github/workflows/release.yml`) runs the tests on every push to `main` and then builds a multi-architecture image
-  (`linux/amd64`, `linux/arm64`) and pushes it to `ghcr.io/<owner>/<repo>` as the short commit hash (for example `:ef711d2`),
+- **Publish image** (`.github/workflows/release.yml`) runs the tests on every push to `main` and then builds an image
+  (`linux/amd64`; `linux/arm64` is switched off for now, see the workflow) and pushes it to `ghcr.io/<owner>/<repo>` as the short commit hash (for example `:ef711d2`),
   so every commit has its own image, even when two are merged at the same time; `latest` always moves forward to the newest of them.
   There are no tags and no GitHub Releases. A weekly run (Monday) and the manual *Run workflow* button rebuild
   the newest commit, which picks up updates to the guide grabber.
