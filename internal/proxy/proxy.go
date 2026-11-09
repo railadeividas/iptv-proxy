@@ -335,6 +335,8 @@ func (p *Proxy) openRaw(ctx context.Context, in *http.Request, pl Payload) (*Ups
 			return nil, errors.New("upstream is not a valid DASH manifest")
 		}
 		up.Manifest = data
+	} else if fromStart(in, resp) && p.set.String("fix_audio_channels") == "on" {
+		up.body = newTSAudioFix(up.body) // cached, prefetched and streamed bytes all pass through it
 	}
 	return up, nil
 }

@@ -102,7 +102,8 @@ WebSocket (sync and guide progress, stream status, edits made in another tab) an
   `SegmentTemplate`, `SegmentList`) manifests are rewritten so everything flows through HMAC-signed links (`/x/…`, and `/xd/…` for
   DASH directories). The proxy cannot be used to fetch arbitrary URLs. Range requests, `HEAD`, compressed manifests, CORS,
   MIME fixes, a short segment cache, retries, last-playlist hold-over, segment prefetch and a connection limit are built in; cookies and credentials are dropped on cross-host
-  redirects. There is no transcoding or recording. Limits and timeouts are settings.
+  redirects. MPEG-TS streams whose stereo AAC audio is mislabelled as 5.1 (VLC plays it, Jellyfin/Plex/Emby fail) get the label corrected in place (a setting,
+  on by default). There is no transcoding or recording. Limits and timeouts are settings.
 - **Compatibility profiles.** Per profile, force a VLC, browser or ExoPlayer User-Agent for streams that don't define one.
 
 ## Health checks
