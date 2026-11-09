@@ -1,9 +1,7 @@
 name: CI
 on:
   pull_request:
-  push:
-    branches: [main]
-  workflow_call: # the release workflow runs the tests first
+  workflow_call: # the publish workflow runs the tests on every push to main, before it builds the image
 jobs:
   test:
     runs-on: ubuntu-latest

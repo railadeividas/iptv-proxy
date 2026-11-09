@@ -13,7 +13,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=ui /web/dist ./web/dist
-# the release workflow passes the tag; a local build shows "dev"
+# the publish workflow passes the short commit hash; a local build shows "dev"
 ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X iptv-proxy/internal/version.Version=${VERSION}" -o /iptv-proxy ./cmd/server
 

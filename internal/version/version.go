@@ -3,11 +3,11 @@ package version
 
 import "runtime/debug"
 
-// Version is set at build time: -ldflags "-X iptv-proxy/internal/version.Version=v1.2.0". The release workflow passes the tag;
-// a plain `go build` or `go run` leaves it as "dev".
+// Version is set at build time: -ldflags "-X iptv-proxy/internal/version.Version=ef711d2". The publish workflow passes the short
+// commit hash of the build (there are no release tags); a plain `go build` or `go run` leaves it as "dev".
 var Version = "dev"
 
-// String is the version to show: the release tag, or for a development build "dev" plus the commit it was built from, if Go knows it.
+// String is the version to show: the commit hash of an image build, or for a development build "dev" plus the commit it was built from, if Go knows it.
 func String() string {
 	if Version != "dev" {
 		return Version

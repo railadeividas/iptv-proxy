@@ -46,13 +46,13 @@ and say so instead of making it.
   environment variables". The only subcommand is `reset-password` (`cmd/server/resetpw.go`), the recovery path for a lost superuser
   password; keep it working, and don't add other subcommands or flags.
 - **Sign-in data.** Password hashes carry their own parameters (`internal/auth`), so you can raise the cost without invalidating
-  anyone. Changing the session cookie format signs everybody out: avoid it, and say so in the release notes if you must.
+  anyone. Changing the session cookie format signs everybody out: avoid it, and say so in the commit message if you must.
 
 **What may change freely:** the admin UI and the admin API behind sign-in. They ship together in one binary, so routes, JSON fields,
 pages and components can be renamed in one change (update every caller, the README and this file). Remove code that becomes unused.
 
 **Removing or replacing something users rely on** (a setting, a URL, a behaviour): add the new way, migrate or keep the old data
-working, and only remove the old path in a later release. Note it in the release notes.
+working, and only remove the old path in a later commit, once people have had time to upgrade. Note it in the commit message.
 
 ### Migrations
 
@@ -60,22 +60,25 @@ working, and only remove the old path in a later release. Note it in the release
   is fine; for anything else use the rebuild recipe (create new table, copy, drop old, rename). Do not run `PRAGMA` or `VACUUM` in a step.
 - A migration runs on a database full of real data and also on a brand-new one (new databases run the baseline, then every
   migration), so write it for both. Destructive steps (dropping a table or column that holds user data) need a reason in the name
-  and a mention in the release notes.
+  and a mention in the commit message.
 - Add a test in `internal/store/migrate_test.go` that migrates a database containing data (the existing ones show how to swap in a
   migration list with `withMigrations`). Store tests use `store.Open(t.TempDir())`.
 - Never add `ALTER TABLE` or `CREATE TABLE` anywhere else, and never "fix up" data at startup outside a migration.
 - Never ask the user to delete `iptv.db` for a change you made. If you think you need that, you need a migration instead. The only
   databases refused for being too old are the ones from development builds before version 4.
 
-### Releases
+### Builds and versions
 
-- Releases are `v*` tags (see Dependencies and CI). Use semantic versions: patch for fixes, minor for features and compatible
-  migrations, major for anything that breaks a contract above.
-- The project's GitHub address lives in `web/src/about.js` (the version badge and the footer links use it).
-- The version lives only in the git tag. The release workflow passes it to the Docker build (`VERSION`), which sets
+- There are no tags and no GitHub Releases. Every push to `main` is tested and published by `.github/workflows/release.yml` as its
+  own image, `ghcr.io/<owner>/<repo>:<short commit hash>`, and `latest` follows the newest one (builds never cancel each other; a
+  separate job moves `latest` one at a time and only forward). **Every commit on `main` therefore ships**: keep `main`
+  working, and never leave a migration or a contract change half done between commits.
+- The project's GitHub address lives in `web/src/about.js` (the version badge links to the commit, the footer links use it).
+- The version is the short commit hash and lives only in git. The workflow passes it to the Docker build (`VERSION`), which sets
   `internal/version.Version`; the UI shows it from `/api/session`. Never hardcode a version number in the code.
-- The release notes name every migration and every behaviour change users will notice. The README's Upgrading section describes the
-  backup and how to roll back; keep it true.
+- With no release notes, the **commit message is the release note**: name every migration and every behaviour change users will
+  notice in it (and a contract break you could not avoid, see the rule above). The README's Upgrading section describes the
+  backup and how to roll back to an older build by its hash; keep it true.
 
 ## Build, run, test
 
@@ -168,7 +171,7 @@ go vet ./... && go test ./...
   `metrics_enabled`, `metrics_access` (token or open), `metrics_token` (at least 16 characters; empty refuses everyone) and the detail
   switches decide. Disabled is a 404. Never log or expose the token; compare it in constant time.
 - **Metric names and labels are a contract** like the player URLs: dashboards and alerts depend on them. Add new ones freely; renaming or
-  removing one needs the old name kept for a release, and a note in the release notes.
+  removing one needs the old name kept for a while, and a note in the commit message.
 - Keep cardinality bounded: labels are profile, mode, state, source, host and the channels being watched right now. Never label by
   client address, user agent, token, stream URL or an individual stream. Counters are in memory and reset on restart.
 - Numbers are read at scrape time from the components (`Proxy.Stats`, `activity.Tracker.Counters/Now`, `health.Details`, store
@@ -218,9 +221,9 @@ go vet ./... && go test ./...
 - **EPG grabber tests.** `internal/epg/grab_test.go` runs `doGrab` against a fake `npm` (command line, channel file, settings read at use,
   a failed or broken grab keeps the last good guide). `scripts/epg-smoke.sh` runs the real iptv-org/epg inside the built image against a local
   fixture site, with no internet: every option we pass must still exist (the grabber follows its `master` branch) and a grab must produce
-  valid XMLTV. CI runs it in the `epg-grabber` job, so it also gates `release.yml`. If you change how the grabber is called in
+  valid XMLTV. CI runs it in the `epg-grabber` job, so it also gates the image build. If you change how the grabber is called in
   `internal/epg`, change both.
-- `ci.yml` (vet, tests, govulncheck, UI build, the `epg-grabber` image test) runs on every pull request; `release.yml` publishes the image on `v*` tags and weekly.
+- `ci.yml` (vet, tests, govulncheck, UI build, the `epg-grabber` image test) runs on every pull request; `release.yml` runs it and then publishes the image on every push to `main`, weekly and on demand.
 
 ## License
 

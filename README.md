@@ -39,7 +39,7 @@ or with Docker Compose. Save this as `compose.yml`:
 ```yaml
 services:
   iptv-proxy:
-    image: ghcr.io/railadeividas/iptv-proxy:latest   # or pin a version, for example :1.2.0
+    image: ghcr.io/railadeividas/iptv-proxy:latest   # or pin one build by its commit, for example :ef711d2
     container_name: iptv-proxy
     ports:
       - "8810:8810"
@@ -239,7 +239,7 @@ can be switched off in the same tab, leaving only the totals. Useful alerts: `ip
 Pull the new image (or rebuild) and restart: your profiles, users, custom sources, settings and check history stay. When a new
 version changes the database layout, the app migrates it automatically at startup. Before it does, it writes a copy of the database
 next to it, as `iptv.db.bak-v<version>` in the data volume, and every migration step is one transaction, so a step that fails
-leaves the database as it was and the app stops with a message saying which step failed. Read the release notes before a new version.
+leaves the database as it was and the app stops with a message saying which step failed. Every change that affects your data or behaviour is named in its commit message (`git log`), so read those before you update.
 
 Playlist and guide links, the `/data` layout and the settings keep working across versions.
 
@@ -249,7 +249,7 @@ stop the app, restore the copy made before the upgrade, and start the older imag
 ```sh
 docker compose down
 docker compose run --rm --no-deps --entrypoint sh iptv-proxy -c 'cd /data && rm -f iptv.db-wal iptv.db-shm && cp iptv.db.bak-v4 iptv.db'
-# set the older image tag in compose.yml, then:
+# set the image in compose.yml to the older build, for example ghcr.io/<owner>/<repo>:ef711d2 (the version badge in the header shows the one you ran), then:
 docker compose up -d
 ```
 
@@ -292,12 +292,14 @@ location / {
 
 - **CI** (`.github/workflows/ci.yml`) builds the UI, runs `go vet` and `go test`, and builds the binary on every pull request and
   push to `main`.
-- **Release** (`.github/workflows/release.yml`) builds a multi-architecture image (`linux/amd64`, `linux/arm64`) and pushes it to
-  `ghcr.io/<owner>/<repo>`. Push a tag such as `v1.2.0` to publish `1.2.0` and `latest`. A weekly run (Monday) and the manual
-  *Run workflow* button rebuild `latest`, which picks up updates to the guide grabber.
-- **Version.** The running version is shown as a badge next to the name in the header, and in the startup log. A release image shows its
-  tag (`v1.2.0`); the weekly and manual builds show `edge-<commit>`; a local `go run` or `go build` shows `dev-<commit>`. The tag is
-  baked in at build time (`-ldflags "-X iptv-proxy/internal/version.Version=…"`, the Dockerfile `VERSION` argument).
+- **Publish image** (`.github/workflows/release.yml`) runs the tests on every push to `main` and then builds a multi-architecture image
+  (`linux/amd64`, `linux/arm64`) and pushes it to `ghcr.io/<owner>/<repo>` as the short commit hash (for example `:ef711d2`),
+  so every commit has its own image, even when two are merged at the same time; `latest` always moves forward to the newest of them.
+  There are no tags and no GitHub Releases. A weekly run (Monday) and the manual *Run workflow* button rebuild
+  the newest commit, which picks up updates to the guide grabber.
+- **Version.** The version is the short commit hash. It is shown as a badge next to the name in the header (a link to that commit) and in the
+  startup log; a local `go run` or `go build` shows `dev-<commit>`. It is baked in at build time (`-ldflags "-X iptv-proxy/internal/version.Version=…"`,
+  the Dockerfile `VERSION` argument). Images published before this change keep their `1.2.0`-style tags.
 - **Dependabot** (`.github/dependabot.yml`) opens weekly, grouped pull requests for Go modules, the web UI packages, the Docker
   base images and the GitHub Actions.
 

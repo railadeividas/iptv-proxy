@@ -5,9 +5,9 @@ import "testing"
 func TestString(t *testing.T) {
 	old := Version
 	defer func() { Version = old }()
-	Version = "v1.2.0"
-	if String() != "v1.2.0" {
-		t.Fatal("a release shows its tag")
+	Version = "ef711d2"
+	if String() != "ef711d2" {
+		t.Fatal("an image build shows its commit")
 	}
 	Version = "dev"
 	if s := String(); s == "" || s[:3] != "dev" {

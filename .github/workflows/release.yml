@@ -1,13 +1,17 @@
-name: Release image
+name: Publish image
+# Every push to main is tested and published as its own image, tagged with the short commit hash (for example
+# ghcr.io/<owner>/<repo>:ef711d2); `latest` follows the newest of them. There are no tags and no GitHub Releases; the commit hash is the version.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
   schedule:
-    - cron: "0 4 * * 1" # weekly rebuild picks up iptv-org/epg updates
+    - cron: "0 4 * * 1" # weekly rebuild of main picks up iptv-org/epg updates
   workflow_dispatch:
 permissions:
   contents: read
   packages: write
+# Builds never cancel each other: two merges at nearly the same time both get their own image. Only `latest` is shared,
+# and it is moved by the `latest` job below, one at a time and only forward.
 jobs:
   test:
     uses: ./.github/workflows/ci.yml
@@ -23,24 +27,16 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # the version shown in the app: the tag for a release (v1.2.0), otherwise edge-<commit>
+      # the version shown in the app: the short commit hash
       - id: ver
-        run: |
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then v="${GITHUB_REF_NAME}"; else v="edge-${GITHUB_SHA::7}"; fi
-          echo "version=$v" >> "$GITHUB_OUTPUT"
+        run: echo "version=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
       - id: meta
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}
-          # the metadata action also adds `latest` on tags by default; the raw tag below does it for every run, so turn the default off
           flavor: latest=false
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=semver,pattern=v{{version}}
-            type=sha
-            type=raw,value=latest
+            type=sha,prefix=,format=short
       - uses: docker/build-push-action@v7
         with:
           context: .
@@ -51,16 +47,30 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-  # a GitHub Release for every version tag, once the tests passed and the image is published
-  release:
+  # `latest` follows the newest commit that has an image. Jobs of this group run one at a time, and a job skips itself when a newer
+  # commit on main already has its image, so a slow older build can never move `latest` back.
+  latest:
     needs: image
-    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    concurrency:
+      group: move-latest
+      cancel-in-progress: false
     steps:
-      - name: Create the release (skipped when one exists)
-        run: gh release view "$GITHUB_REF_NAME" || gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Point latest at this commit unless a newer one is already published
         env:
           GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
+        run: |
+          repo="ghcr.io/${GITHUB_REPOSITORY,,}"
+          for sha in $(gh api "repos/${GITHUB_REPOSITORY}/compare/${GITHUB_SHA}...main?per_page=100" --jq '.commits[].sha'); do
+            if docker buildx imagetools inspect "$repo:${sha::7}" >/dev/null 2>&1; then
+              echo "A newer commit (${sha::7}) already has its image; leaving latest to it."
+              exit 0
+            fi
+          done
+          docker buildx imagetools create -t "$repo:latest" "$repo:${GITHUB_SHA::7}"
