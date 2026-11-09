@@ -53,7 +53,6 @@ const fetchRows = computed(() => {
   return numberRows(s, pl, 'playlists').map((r, i) => ({ ...r, v: { playlists: pl[i], guides: gu[i] } }))
 })
 const rankRows = computed(() => ranking.value.map((x) => ({ key: x.key, name: x.name, v: M.value.pick(x), c: profileColor(x.key, all.value) })))
-const noFetches = computed(() => !fetchRows.value.some((r) => r.v.playlists || r.v.guides))
 </script>
 
 <template>
@@ -95,11 +94,8 @@ const noFetches = computed(() => !fetchRows.value.some((r) => r.v.playlists || r
     <BarList :rows="rankRows" :fmt="M.fmt" empty="Nothing was played in this period." /></div>
   <div class="card">
     <h2>Playlist and guide fetches<Scope /></h2><p class="muted small">Players refreshing their lists, per {{ bucketWord(samples?.bucket) }}<template v-if="samples && t && samples.bucket !== t.bucket"> (recorded hour by hour, so never finer than that)</template></p>
-    <p v-if="samples && noFetches" class="muted small">Nothing recorded in this period. Fetches are recorded hour by hour since this feature was added; earlier ones are only in the totals above.</p>
-    <template v-else>
       <div class="legend"><span><i style="background:var(--s1)"></i>Playlist</span><span><i style="background:var(--s3)"></i>Guide</span></div>
       <StatChart :rows="fetchRows" :keys="['playlists', 'guides']" :names="{ playlists: 'Playlist', guides: 'Guide' }" :colors="{ playlists: 'var(--s1)', guides: 'var(--s3)' }" type="bars" int :fmt="(v) => v.toLocaleString()" :height="200" label="Playlist and guide fetches" />
-    </template>
   </div>
   </div>
 </template>

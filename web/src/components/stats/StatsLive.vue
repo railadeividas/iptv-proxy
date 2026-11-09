@@ -96,13 +96,12 @@ const collecting = computed(() => live.value.samples.length < 2)
   </div>
   <div class="card">
     <h2>Outgoing bandwidth<Scope kind="now" text="Last 5 minutes" /></h2><p class="muted small">Sent to players through the proxy</p>
-    <p v-if="collecting" class="muted small">Collecting samples: the chart fills as the server saves running sessions (every {{ live.interval }} s). It starts empty after the app restarts.</p>
-    <StatChart v-else :rows="bwRows" :keys="['bw']" :names="{ bw: 'Outgoing' }" :colors="{ bw: 'var(--s1)' }" type="area" :fmt="mbit" :axis="(v) => +v.toFixed(1)" :height="180" label="Outgoing bandwidth" sparse />
+    <p v-if="collecting" class="muted small">The chart fills as the server saves running sessions (every {{ live.interval }} s). It starts empty after the app restarts.</p>
+    <StatChart :rows="bwRows" :keys="['bw']" :names="{ bw: 'Outgoing' }" :colors="{ bw: 'var(--s1)' }" type="area" :fmt="mbit" :axis="(v) => +v.toFixed(1)" :height="180" label="Outgoing bandwidth" sparse />
   </div>
   <div class="card">
     <h2>Viewers over the last hour<Scope kind="now" text="Last hour" /></h2><p class="muted small">Streams the proxy carried, the most in each minute</p>
-    <p v-if="collecting" class="muted small">Collecting samples…</p>
-    <StatChart v-else :rows="viewerRows" :keys="['n']" :names="{ n: 'Watching' }" :colors="{ n: 'var(--s3)' }" type="bars" int :fmt="(v) => v.toLocaleString()" :height="180" :max-bar="10" label="Viewers over the last hour" sparse />
+    <StatChart :rows="viewerRows" :keys="['n']" :names="{ n: 'Watching' }" :colors="{ n: 'var(--s3)' }" type="bars" int :fmt="(v) => v.toLocaleString()" :height="180" :max-bar="10" label="Viewers over the last hour" sparse />
   </div>
 </template>
 

@@ -52,7 +52,7 @@ const top = computed(() => {
   if (props.max) return props.max
   let mx = Math.max(0, ...props.rows.map((r) => (stacked.value ? total(r) : Math.max(0, ...props.keys.map((k) => val(r, k))))))
   if (props.prev) mx = Math.max(mx, ...props.prev)
-  const t = niceMax((mx / props.scale) * 1.05) * props.scale
+  const t = mx > 0 ? niceMax((mx / props.scale) * 1.05) * props.scale : 4 * props.scale // nothing to draw: a plain 0 to 4 in the axis unit
   if (!props.int) return t
   // whole numbers: four equal steps that are themselves whole (and round when the numbers are big)
   if (t < 20) return Math.max(4, Math.ceil(t / 4) * 4)
@@ -126,6 +126,7 @@ const prevPath = computed(() => (props.prev && props.prev.length ? 'M' + props.p
 const hover = ref(-1)
 const mx = ref(0)
 function move(e) {
+  if (!n.value) return
   const rc = e.currentTarget.getBoundingClientRect()
   hover.value = Math.max(0, Math.min(n.value - 1, Math.floor(((e.clientX - rc.left) / rc.width) * n.value)))
   mx.value = e.clientX - box.value.getBoundingClientRect().left
@@ -136,7 +137,7 @@ const tipStyle = computed(() => (mx.value > W.value / 2 ? { right: W.value - mx.
 
 <template>
   <div ref="box" class="chart">
-    <svg v-if="w && n" :viewBox="`0 0 ${W} ${H}`" :height="H" role="img" :aria-label="label">
+    <svg v-if="w" :viewBox="`0 0 ${W} ${H}`" :height="H" role="img" :aria-label="label">
       <g v-for="(t, i) in ticks" :key="i">
         <line :x1="M.l" :x2="W - M.r" :y1="t.y" :y2="t.y" class="grid" :class="{ base: i === 0 }" />
         <text :x="M.l - 8" :y="t.y + 4" text-anchor="end">{{ fmtAxis(t.v) }}</text>
@@ -155,7 +156,6 @@ const tipStyle = computed(() => (mx.value > W.value / 2 ? { right: W.value - mx.
       <line v-if="hover >= 0" :x1="x(hover)" :x2="x(hover)" :y1="M.t" :y2="M.t + ih" class="cross" />
       <rect :x="M.l" :y="M.t" :width="iw" :height="ih" fill="transparent" class="hit" @pointermove="move" @pointerleave="hover = -1" />
     </svg>
-    <p v-else-if="w" class="muted small empty">Nothing in this period.</p>
     <div v-if="row" class="tip" :style="tipStyle">
       <div class="t">{{ row.tt || row.l }}</div>
       <div v-for="k in keys" :key="k" class="r"><span><i :style="{ background: colors[k] }"></i>{{ names[k] }}</span><b>{{ row.v[k] == null ? '–' : fmt(row.v[k]) }}</b></div>
@@ -176,7 +176,6 @@ text { fill:var(--muted); font-size:11px; font-family:inherit; }
 .prev { stroke:var(--muted); stroke-width:1.5; stroke-dasharray:5 4; }
 .cross { stroke:var(--muted); stroke-width:1; pointer-events:none; }
 .hit { touch-action:pan-y; }
-.empty { margin:0; padding:14px 0; }
 .small { font-size:12px; }
 .tip { position:absolute; top:0; z-index:5; pointer-events:none; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:8px 10px; box-shadow:0 6px 24px rgba(0,0,0,.2); font-size:12px; min-width:140px; }
 .tip .t { font-weight:600; margin-bottom:4px; }
