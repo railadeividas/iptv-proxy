@@ -32,7 +32,9 @@ const tiles = computed(() => {
     { label: 'Proxy connections', scope: 'now', value: `${k.in_use} / ${k.limit}`, tone: k.in_use >= k.limit ? 'bad' : '', gauge: k.limit ? k.in_use / k.limit : 0, title: 'Streams the proxy is carrying right now, and the most it allows (Settings > Proxy)' },
     { label: 'Cache hit rate', scope: 'start', value: c.limit === 0 ? 'off' : asked ? `${Math.round((c.hits / asked) * 100)}%` : '–', gauge: asked ? c.hits / asked : null, title: 'Segments answered from the cache out of all segment requests since the app started (Settings > Proxy)' },
     { label: 'Cache in use', scope: 'now', value: c.limit === 0 ? 'off' : bytes(c.bytes), gauge: c.limit ? c.bytes / c.limit : null, sub: c.limit ? `of ${bytes(c.limit)}` : '', title: `${c.entries.toLocaleString()} segments held right now` },
-    { label: 'Served from cache', scope: 'start', value: bytes(c.hit_bytes), title: 'Video sent to players from the cache instead of the stream server' },
+    { label: 'Served from cache', scope: 'start', value: bytes(c.hit_bytes), title: 'Video sent to players from the segment cache, or from a live stream shared with another viewer, instead of a connection to the stream server of its own' },
+    { label: 'Shared streams', scope: 'now', value: (c.shared_streams || 0).toLocaleString(), sub: `${(c.shared_viewers || 0).toLocaleString()} ${c.shared_viewers === 1 ? 'viewer' : 'viewers'}`, title: 'Live streams (continuous MPEG-TS) that several viewers watch through one connection to the stream server (Settings > Proxy)' },
+    { label: 'Joined a shared stream', scope: 'start', value: (c.shared_joins || 0).toLocaleString(), title: 'Viewers that did not need a connection of their own because somebody was already watching the same live stream' },
     { label: 'Prefetched', scope: 'start', value: c.prefetched.toLocaleString(), title: 'Segments fetched ahead of the player' },
     { label: 'Shared fetches', scope: 'start', value: c.coalesced.toLocaleString(), title: 'Requests that waited for a fetch already running instead of asking the server again' },
     { label: 'Retries', scope: 'start', value: c.retries.toLocaleString(), title: 'Stream server requests repeated after a temporary failure' },
@@ -63,7 +65,7 @@ const count = (v) => Math.round(v).toLocaleString()
 </script>
 
 <template>
-  <Tiles :items="tiles" :cols="4" />
+  <Tiles :items="tiles" :cols="5" />
   <div class="card-row">
     <div class="card"><h2>Stream servers<Scope /></h2><p class="muted small">Data carried by the proxy, by the server it came from</p>
       <BarList :rows="hostRows" :fmt="bytes" color="var(--s2)" empty="Nothing was carried in this period." /></div>
@@ -75,9 +77,9 @@ const count = (v) => Math.round(v).toLocaleString()
       </template></div>
   </div>
   <div v-if="server && any" class="card-row">
-    <div class="card"><h2>Where the video came from<Scope /></h2><p class="muted small">Data served to players: from the cache or from the stream server</p>
-      <div class="legend"><span><i style="background:var(--s2)"></i>From the stream server</span><span><i style="background:var(--s3)"></i>From the cache</span></div>
-      <StatChart :rows="sourceRows" :keys="['up', 'cache']" :names="{ up: 'From the stream server', cache: 'From the cache' }" :colors="{ up: 'var(--s2)', cache: 'var(--s3)' }" type="bars" :fmt="bytes" :axis="sourceAxis.axis" :scale="sourceAxis.scale" :height="200" label="Data from cache and stream server" /></div>
+    <div class="card"><h2>Where the video came from<Scope /></h2><p class="muted small">Data served to players: from the cache or a shared stream, or fetched from the stream server for them alone. Only HLS segments and continuous MPEG-TS streams can be served this way; DASH and streams in other formats always come from the stream server.</p>
+      <div class="legend"><span><i style="background:var(--s2)"></i>Fetched from the stream server</span><span><i style="background:var(--s3)"></i>From the cache or a shared stream</span></div>
+      <StatChart :rows="sourceRows" :keys="['up', 'cache']" :names="{ up: 'Fetched from the stream server', cache: 'From the cache or a shared stream' }" :colors="{ up: 'var(--s2)', cache: 'var(--s3)' }" type="bars" :fmt="bytes" :axis="sourceAxis.axis" :scale="sourceAxis.scale" :height="200" label="Data from cache and stream server" /></div>
     <div class="card"><h2>Cache hit rate<Scope /></h2><p class="muted small">Segment requests answered from the cache</p>
       <StatChart :rows="hitRows" :keys="['h']" :names="{ h: 'Hit rate' }" :colors="{ h: 'var(--s3)' }" type="line" :fmt="pct" :max="100" :height="200" label="Cache hit rate" /></div>
   </div>

@@ -103,7 +103,10 @@ WebSocket (sync and guide progress, stream status, edits made in another tab) an
   DASH directories). The proxy cannot be used to fetch arbitrary URLs. Range requests, `HEAD`, compressed manifests, CORS,
   MIME fixes, a short segment cache, retries, last-playlist hold-over, segment prefetch and a connection limit are built in; cookies and credentials are dropped on cross-host
   redirects. MPEG-TS streams whose stereo AAC audio is mislabelled as 5.1 (VLC plays it, Jellyfin/Plex/Emby fail) get the label corrected in place (a setting,
-  on by default). There is no transcoding or recording. Limits and timeouts are settings.
+  on by default). **Live streams are shared**: when several players watch the same continuous MPEG-TS stream (not HLS or DASH) through
+  the proxy, the provider is asked once and every player is served from a short buffer; the proxy connects again by itself when the
+  server drops the stream, and players that join start at the live point (a setting, on by default; it helps providers that allow
+  few connections). There is no transcoding or recording. Limits and timeouts are settings.
 - **Compatibility profiles.** Per profile, force a VLC, browser or ExoPlayer User-Agent for streams that don't define one.
 
 ## Health checks
@@ -177,7 +180,7 @@ Settings live in the database (the `/data` volume).
 | **General** | Address for your player links, defaults for custom sources (auto-refresh, default every 72 hours; largest download), download timeout and User-Agent, time zone, log format |
 | **iptv-org** | API address, sync interval and download limit, guide interval, parallel downloads, days of programmes, timeout and the wait after profile changes; also the sync and guide status, with a button to run each now |
 | **Health** | Which streams to check and how often, failed checks in a row, retry time, when to stop checking a failing stream, quiet hours, history limits, parallel checks (in total and per server, default 1 per server), timeouts, User-Agent |
-| **Proxy** | Most streams at once, upstream timeouts, how long proxy links stay valid, manifest and segment-cache limits, default and compatibility User-Agents |
+| **Proxy** | Most streams at once, upstream timeouts, how long proxy links stay valid, manifest and segment-cache limits, sharing of live streams, default and compatibility User-Agents |
 | **Stats** | Whether activity is recorded, privacy (how much of an address is kept, the player name, the reverse-proxy header), how long a viewer counts as watching, when a session ends, how often running sessions are saved, how much history to keep |
 | **Metrics** | Whether `/metrics` is served (off by default), whether it needs a token or is open, the token, and whether to add a series per profile and per watched channel |
 | **Security** | How long you stay signed in, failed sign-in limit and window, shortest password |
@@ -202,7 +205,7 @@ Privacy comes first by default: client addresses are **masked** (an IPv4 address
 48), so devices on the same network look alike. The Stats tab in Settings can store full addresses or none, stop recording the player name,
 and stop recording altogether. Behind a reverse proxy every viewer would show the proxy's address: set the header it adds (for example
 `X-Forwarded-For`) in the same tab. History is deleted after 30 days (and beyond the session and device limits), all adjustable.
-Cache, retry and playlist/guide fetch history is kept hour by hour (a few kilobytes a month) and follows the same retention. The superuser can also delete stored stats by hand (everything, or older than a number of days) at the bottom of Settings > Stats; profiles, settings and links are not touched. Stats are only counted from the moment this version runs: nothing earlier is known. Old proxy links keep working; viewers who started
+Cache, retry and playlist/guide fetch history is kept hour by hour (a few kilobytes a month) and follows the same retention. The superuser can also delete all stored stats by hand with one button at the bottom of Settings > Stats; profiles, settings and links are not touched. Stats are only counted from the moment this version runs: nothing earlier is known. Old proxy links keep working; viewers who started
 before an upgrade are counted from their next playlist or channel request.
 
 ## Metrics (Prometheus)

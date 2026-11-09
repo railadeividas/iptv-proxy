@@ -176,7 +176,7 @@ go vet ./... && go test ./...
   the viewer's hours, days and Mondays are) and `shift=1` (the range of the same length right before, for comparisons) through `statsFilter`;
   never build a range any other way. Rows are counted in the exact range, only the bucket grid is aligned. `/samples` is never finer than an
   hour and `/live` ignores the range. The `server` part of `/samples` is only for roles that see everybody's activity.
-- `POST /api/stats/clear` (`perm(auth.Settings)`, body `{"older_than_days": N}`, 0 = everything, the field is required so an empty body never wipes) deletes sessions, devices and the hourly sample tables in one transaction (`Store.ClearActivity`); the UI is `StatsClear.vue` at the bottom of Settings > Stats and always asks with `ask({danger:true})`. Running sessions in memory are not touched.
+- `POST /api/stats/clear` (`perm(auth.Settings)`, body `{"older_than_days": N}`, 0 = everything, the field is required so an empty body never wipes) deletes sessions, devices and the hourly sample tables in one transaction (`Store.ClearActivity`); the UI is `StatsClear.vue` at the bottom of Settings > Stats (one "Delete everything" button; the route still accepts an age) and always asks with `ask({danger:true})`. Running sessions in memory are not touched.
 - **Stats page**: tabs **Live** (the default), **Overview, Channels, Profiles, Devices, Sessions, Proxy** (`/stats/:tab`; Proxy only for roles with
   `profiles.all`). The Profiles tab lists one row per profile (columns on a desktop, a small card per row on a phone), searchable, sortable and paged; everything in it follows the Time range: it must stay short with many profiles. The Time range is on every tab. Each card or tile wears a `Scope` badge (period / now / all time / since start): keep one on anything that does not follow the Time range. The time range (a Grafana-style picker: quick ranges that move with the clock, or an absolute from/to), the chart step ("Group by": hour, day or week, auto by default; one control in the top bar for every chart cut by time. The UI always sends an explicit `step`, never finer than an hour), profile, measure (sessions / data / watch time, switched inside the cards that follow it), chart type, split and compare live in the URL. Charts are
   hand-written SVG (`components/stats/StatChart.vue` and friends, shared logic in `src/stats.js`), no chart library; series colours are
@@ -206,6 +206,13 @@ go vet ./... && go test ./...
   stream URL.
 - Sync and refresh jobs keep the last good data when they fail.
 - Proxy links are HMAC-signed; never add an endpoint that fetches arbitrary URLs.
+- **Shared live streams** (`internal/proxy/share.go`): the channel endpoint opens streams with `Proxy.OpenLive`, never segments or playlists
+  (those keep `Open`). A continuous MPEG-TS response (no length, three sync bytes in the first packets) is read once by a hub into a ring
+  buffer and every viewer of the same URL, Referer and User-Agent reads from it; anything else goes to its viewer unchanged. The hub owns
+  its connection (a context that does not end with the first viewer), reconnects only when a stream that ran at least `minLiveRun` drops
+  (a short finished file must not loop), and closes `shared_stream_linger_seconds` after the last viewer. Lock order is `hub.mu` then
+  `shareSet.mu`. Bytes served to joiners count in `Stats.CacheHitBytes`, so the hourly samples and the Proxy tab need no new column.
+  Tests use a local server that streams numbered packets (`share_test.go`); run them with `-race`.
 
 ## Frontend conventions
 

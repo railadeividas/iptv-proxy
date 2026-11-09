@@ -226,7 +226,8 @@ func (s *Server) statsOverview(w http.ResponseWriter, r *http.Request) {
 		out["connections"] = map[string]int{"in_use": s.px.InUse(), "limit": s.set.Int("max_connections")}
 		ps := s.px.Stats()
 		out["cache"] = map[string]any{"entries": ps.CacheEntries, "bytes": ps.CacheBytes, "limit": ps.CacheLimit, "hits": ps.CacheHits, "misses": ps.CacheMisses,
-			"hit_bytes": ps.CacheHitBytes, "prefetched": ps.Prefetched, "coalesced": ps.Coalesced, "retries": ps.Retries, "holdovers": ps.Holdovers}
+			"hit_bytes": ps.CacheHitBytes, "prefetched": ps.Prefetched, "coalesced": ps.Coalesced, "retries": ps.Retries, "holdovers": ps.Holdovers,
+			"shared_streams": ps.SharedStreams, "shared_viewers": ps.SharedViewers, "shared_joins": ps.SharedJoins}
 	}
 	out["all_profiles"] = auth.Can(userFrom(r).Role, auth.AllProfiles)
 	writeJSON(w, out)

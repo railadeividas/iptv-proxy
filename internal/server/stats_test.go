@@ -2,11 +2,13 @@ package server
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -656,5 +658,77 @@ func TestStatsClear(t *testing.T) {
 	st.DB.QueryRow(`SELECT COUNT(*) FROM profiles`).Scan(&left)
 	if left != 2 {
 		t.Fatal("profiles are not stats")
+	}
+}
+
+// Two profiles watching the same continuous MPEG-TS stream through their channel links cost the provider one connection,
+// both are counted as watching, and the second one's bytes count as served from the cache.
+func TestChannelLinkSharesALiveStream(t *testing.T) {
+	var conns, active atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conns.Add(1)
+		active.Add(1)
+		defer active.Add(-1)
+		w.Header().Set("Content-Type", "video/mp2t")
+		rc := http.NewResponseController(w)
+		pkt := make([]byte, 188)
+		pkt[0], pkt[1], pkt[2] = 0x47, 0x1f, 0xff
+		for {
+			if _, err := w.Write(pkt); err != nil {
+				return
+			}
+			rc.Flush()
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(2 * time.Millisecond):
+			}
+		}
+	}))
+	t.Cleanup(upstream.Close)
+
+	h, app, st, _, _, _ := newStatsApp(t)
+	st.DB.Exec(`INSERT INTO streams(ck,url,status) VALUES('News',?,1)`, upstream.URL+"/live")
+	st.DB.Exec(`INSERT INTO profile_channels(profile_id,ck,position) VALUES(11,'News',0),(12,'News',0)`)
+	if errs := app.set.Apply(map[string]any{"shared_stream_linger_seconds": 0.0}); errs != nil {
+		t.Fatal(errs)
+	}
+	front := httptest.NewServer(h)
+	t.Cleanup(front.Close)
+
+	watch := func(token string) (*http.Response, func(n int)) {
+		resp, err := http.Get(front.URL + "/p/" + token + "/channel/News.m3u8")
+		if err != nil || resp.StatusCode != 200 {
+			t.Fatalf("%s: %v %v", token, err, resp)
+		}
+		return resp, func(n int) {
+			t.Helper()
+			buf := make([]byte, 188*n)
+			if _, err := io.ReadFull(resp.Body, buf); err != nil || buf[0] != 0x47 {
+				t.Fatalf("%s: %v first byte %x", token, err, buf[0])
+			}
+		}
+	}
+	a, readA := watch("tokann")
+	readA(20)
+	b, readB := watch("tokbob")
+	readB(20)
+	if conns.Load() != 1 {
+		t.Fatalf("the provider sees one connection for two profiles, got %d", conns.Load())
+	}
+	if ps := app.px.Stats(); ps.SharedStreams != 1 || ps.SharedViewers != 2 || ps.SharedJoins != 1 || ps.CacheHitBytes == 0 {
+		t.Fatalf("proxy stats: %+v", ps)
+	}
+	if now := app.Activity().Now(0); len(now) != 2 || now[0].Mode != "proxy" || now[1].Mode != "proxy" {
+		t.Fatalf("both are counted as watching: %+v", now)
+	}
+	a.Body.Close()
+	b.Body.Close()
+	deadline := time.Now().Add(3 * time.Second)
+	for active.Load() != 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if active.Load() != 0 {
+		t.Fatal("the connection to the provider closes when the last viewer leaves")
 	}
 }

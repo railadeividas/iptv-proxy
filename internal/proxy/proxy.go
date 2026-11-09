@@ -41,6 +41,7 @@ type Proxy struct {
 	inUse  atomic.Int64 // open proxied connections
 	cache  *segCache
 	hosts  hostCount
+	shares shareSet // live streams shared between viewers (share.go)
 
 	upstreamOK, upstreamErr atomic.Uint64 // requests to streams that worked / failed (not counting players that left)
 	retries, holdovers      atomic.Uint64 // repeated upstream requests; playlists served from the last good copy
@@ -196,14 +197,18 @@ type Stats struct {
 	CacheStores, CacheRejected uint64
 	Prefetched, Coalesced      uint64
 	Retries, Holdovers         uint64
+	SharedStreams              int // live streams shared between viewers right now
+	SharedViewers              int
+	SharedJoins                uint64 // viewers that joined a stream somebody else had opened
 }
 
 func (p *Proxy) Stats() Stats {
 	n, b := p.cache.usage()
 	return Stats{InUse: p.InUse(), Limit: p.set.Int("max_connections"), CacheEntries: n, CacheBytes: int64(b), CacheLimit: p.set.MB("segment_cache_mb"),
 		CacheHits: p.cache.hits.Load(), CacheMisses: p.cache.misses.Load(), UpstreamOK: p.upstreamOK.Load(), UpstreamErrors: p.upstreamErr.Load(),
-		CacheHitBytes: p.cache.hitBytes.Load(), CacheStores: p.cache.stores.Load(), CacheRejected: p.cache.rejected.Load(),
-		Prefetched: p.prefetched.Load(), Coalesced: p.coalesced.Load(), Retries: p.retries.Load(), Holdovers: p.holdovers.Load()}
+		CacheHitBytes: p.cache.hitBytes.Load() + p.shares.bytes.Load(), CacheStores: p.cache.stores.Load(), CacheRejected: p.cache.rejected.Load(),
+		Prefetched: p.prefetched.Load(), Coalesced: p.coalesced.Load(), Retries: p.retries.Load(), Holdovers: p.holdovers.Load(),
+		SharedStreams: int(p.shares.streams.Load()), SharedViewers: int(p.shares.viewers.Load()), SharedJoins: p.shares.joins.Load()}
 }
 
 // Open requests the upstream URL with the payload's headers. Errors (including

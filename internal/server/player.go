@@ -189,7 +189,7 @@ func (s *Server) channel(w http.ResponseWriter, r *http.Request) {
 		if ua == "" {
 			ua = proxy.CompatUA(s.set, p.Compat)
 		}
-		up, err := s.px.Open(r.Context(), r, proxy.Payload{U: st.URL, R: st.Referrer, A: ua, P: p.ID, C: ck})
+		up, err := s.px.OpenLive(r.Context(), r, proxy.Payload{U: st.URL, R: st.Referrer, A: ua, P: p.ID, C: ck})
 		if err != nil {
 			if r.Context().Err() == nil {
 				s.st.MarkPlayback(st.URL, false)
