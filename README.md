@@ -202,7 +202,7 @@ Privacy comes first by default: client addresses are **masked** (an IPv4 address
 48), so devices on the same network look alike. The Stats tab in Settings can store full addresses or none, stop recording the player name,
 and stop recording altogether. Behind a reverse proxy every viewer would show the proxy's address: set the header it adds (for example
 `X-Forwarded-For`) in the same tab. History is deleted after 30 days (and beyond the session and device limits), all adjustable.
-Cache, retry and playlist/guide fetch history is kept hour by hour (a few kilobytes a month) and follows the same retention. Stats are only counted from the moment this version runs: nothing earlier is known. Old proxy links keep working; viewers who started
+Cache, retry and playlist/guide fetch history is kept hour by hour (a few kilobytes a month) and follows the same retention. The superuser can also delete stored stats by hand (everything, or older than a number of days) at the bottom of Settings > Stats; profiles, settings and links are not touched. Stats are only counted from the moment this version runs: nothing earlier is known. Old proxy links keep working; viewers who started
 before an upgrade are counted from their next playlist or channel request.
 
 ## Metrics (Prometheus)

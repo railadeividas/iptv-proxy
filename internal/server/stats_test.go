@@ -591,3 +591,70 @@ func TestStatsChartRoutes(t *testing.T) {
 		t.Fatalf("admin by other profile: %+v", lv)
 	}
 }
+
+// Deleting stored stats is for the superuser only (Settings), asks for a valid age and removes exactly what it says.
+func TestStatsClear(t *testing.T) {
+	h, _, st, ann, _, adm := newStatsApp(t)
+	root := sessionOf(t, call(h, "POST", "/api/login", map[string]string{"username": "root", "password": "rootpassword"}))
+	now := time.Now().Unix()
+	old, recent := now-40*86400, now-86400
+	for _, s := range []store.Session{
+		{ProfileID: 11, CK: "News", Mode: "proxy", Started: old, Last: old + 60, Bytes: 10},
+		{ProfileID: 12, CK: "News", Mode: "redirect", Started: old, Last: old},
+		{ProfileID: 11, CK: "News", Mode: "proxy", Started: recent, Last: recent + 60, Bytes: 20},
+	} {
+		st.AddSession(s)
+	}
+	st.TouchClient(11, "10.0.0.0/24", "VLC", "play", old)
+	st.TouchClient(11, "10.0.1.0/24", "Kodi", "play", recent)
+	hour := now / 3600 * 3600
+	st.AddSamples(hour-40*86400, store.ServerSample{CacheHits: 1}, map[int64]store.ProfileSample{11: {Playlists: 1}})
+	st.AddSamples(hour, store.ServerSample{CacheHits: 2}, map[int64]store.ProfileSample{11: {Playlists: 2}})
+	count := func(table string) (n int) { st.DB.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&n); return }
+
+	body := func(days any) map[string]any { return map[string]any{"older_than_days": days} }
+	for _, c := range []struct {
+		who  *http.Cookie
+		name string
+		want int
+	}{{nil, "signed out", 401}, {ann, "user", 403}, {adm, "admin", 403}} {
+		var cookies []*http.Cookie
+		if c.who != nil {
+			cookies = append(cookies, c.who)
+		}
+		if got := call(h, "POST", "/api/stats/clear", body(0), cookies...).Code; got != c.want {
+			t.Fatalf("%s: %d, want %d", c.name, got, c.want)
+		}
+	}
+	if count("activity_sessions") != 3 {
+		t.Fatal("a refused request must delete nothing")
+	}
+	for _, bad := range []any{nil, -1, 99999, "x"} {
+		if got := call(h, "POST", "/api/stats/clear", body(bad), root).Code; got != 400 {
+			t.Fatalf("older_than_days %v: %d, want 400", bad, got)
+		}
+	}
+	if call(h, "POST", "/api/stats/clear", map[string]any{}, root).Code != 400 {
+		t.Fatal("the age is required: an empty body must not wipe everything")
+	}
+
+	var out store.ClearedActivity
+	rec := call(h, "POST", "/api/stats/clear", body(30), root)
+	if rec.Code != 200 {
+		t.Fatalf("older than 30 days: %d %s", rec.Code, rec.Body)
+	}
+	json.Unmarshal(rec.Body.Bytes(), &out)
+	if out.Sessions != 2 || out.Devices != 1 || out.Samples != 2 || count("activity_sessions") != 1 || count("activity_clients") != 1 || count("stats_samples") != 1 || count("stats_profile_samples") != 1 {
+		t.Fatalf("older than 30 days: %+v", out)
+	}
+	rec = call(h, "POST", "/api/stats/clear", body(0), root)
+	json.Unmarshal(rec.Body.Bytes(), &out)
+	if rec.Code != 200 || out.Sessions != 1 || out.Devices != 1 || out.Samples != 2 || count("activity_sessions")+count("activity_clients")+count("stats_samples")+count("stats_profile_samples") != 0 {
+		t.Fatalf("everything: %d %+v", rec.Code, out)
+	}
+	var left int
+	st.DB.QueryRow(`SELECT COUNT(*) FROM profiles`).Scan(&left)
+	if left != 2 {
+		t.Fatal("profiles are not stats")
+	}
+}

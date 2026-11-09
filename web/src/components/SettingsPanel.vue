@@ -1,6 +1,7 @@
 <script setup>
 import IptvOrgStatus from './IptvOrgStatus.vue'
 import SettingsForm from './SettingsForm.vue'
+import StatsClear from './StatsClear.vue'
 
 defineProps({ group: String })
 </script>
@@ -9,6 +10,7 @@ defineProps({ group: String })
   <div class="panel">
     <IptvOrgStatus v-if="group === 'iptv-org'" />
     <SettingsForm :key="group" :group="group" />
+    <StatsClear v-if="group === 'stats'" />
   </div>
 </template>
 

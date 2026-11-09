@@ -78,6 +78,58 @@ func (s *Store) PruneActivity(maxDays, maxSessions, maxClients int) {
 	_, _ = s.DB.Exec(`DELETE FROM activity_clients WHERE id IN (SELECT id FROM activity_clients ORDER BY last_seen DESC, id DESC LIMIT -1 OFFSET ?)`, maxClients)
 }
 
+// ClearedActivity says how much ClearActivity removed.
+type ClearedActivity struct {
+	Sessions int64 `json:"sessions"`
+	Devices  int64 `json:"devices"`
+	Samples  int64 `json:"samples"` // hourly rows: the server's and the profiles'
+}
+
+// ClearActivity deletes stored stats in one transaction: everything when before is 0, otherwise what ended before that
+// unix time (sessions by their last request, devices by when they were last seen, hourly samples by their hour).
+// Profiles, settings and the running sessions in memory are not touched.
+func (s *Store) ClearActivity(before int64) (ClearedActivity, error) {
+	var out ClearedActivity
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return out, err
+	}
+	defer tx.Rollback()
+	del := func(q string, n *int64, extra ...any) error {
+		res, err := tx.Exec(q, extra...)
+		if err != nil {
+			return err
+		}
+		c, _ := res.RowsAffected()
+		*n += c
+		return nil
+	}
+	steps := []struct {
+		all, old string
+		n        *int64
+	}{
+		{`DELETE FROM activity_sessions`, `DELETE FROM activity_sessions WHERE last < ?`, &out.Sessions},
+		{`DELETE FROM activity_clients`, `DELETE FROM activity_clients WHERE last_seen < ?`, &out.Devices},
+		{`DELETE FROM stats_samples`, `DELETE FROM stats_samples WHERE hour < ?`, &out.Samples},
+		{`DELETE FROM stats_profile_samples`, `DELETE FROM stats_profile_samples WHERE hour < ?`, &out.Samples},
+	}
+	for _, st := range steps {
+		if before == 0 {
+			err = del(st.all, st.n)
+		} else {
+			err = del(st.old, st.n, before)
+		}
+		if err != nil {
+			return ClearedActivity{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return ClearedActivity{}, err
+	}
+	s.notify("activity")
+	return out, nil
+}
+
 // ActivityFilter narrows the stats. Owner 0 means everybody's profiles; Profile 0 (and no Profiles) every profile; Profiles
 // is a selection of several; Since 0 all time.
 type ActivityFilter struct {

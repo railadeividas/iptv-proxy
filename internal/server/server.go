@@ -100,6 +100,7 @@ func (s *Server) Handler() http.Handler {
 	api("PUT /api/profiles/{id}/channels", s.replaceChannels)
 
 	api("GET /api/stats", s.statsOverview)
+	perm(auth.Settings, "POST /api/stats/clear", s.statsClear) // deletes history of everybody: not an ordinary stats read
 	api("GET /api/stats/timeline", s.statsTimeline)
 	api("GET /api/stats/patterns", s.statsPatterns)
 	api("GET /api/stats/breakdown", s.statsBreakdown)

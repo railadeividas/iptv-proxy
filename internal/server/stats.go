@@ -1,6 +1,7 @@
 package server
 
 import (
+	"log/slog"
 	"net/http"
 	"slices"
 	"strconv"
@@ -377,4 +378,30 @@ func (s *Server) statsLive(w http.ResponseWriter, r *http.Request) {
 		in = func(id int64) bool { return mine[id] }
 	}
 	writeJSON(w, map[string]any{"interval": s.set.Int("stats_save_interval_seconds"), "samples": s.act.LiveSamples(in)})
+}
+
+// statsClear deletes the stored stats: everything, or what is older than a number of days. It changes data of every profile,
+// so it needs the Settings permission like the settings it belongs to (the page for it is Settings > Stats).
+func (s *Server) statsClear(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		OlderThanDays *int `json:"older_than_days"` // 0 = everything
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	if in.OlderThanDays == nil || *in.OlderThanDays < 0 || *in.OlderThanDays > 3650 {
+		httpErr(w, 400, "older_than_days must be 0 (everything) to 3650")
+		return
+	}
+	var before int64
+	if *in.OlderThanDays > 0 {
+		before = time.Now().AddDate(0, 0, -*in.OlderThanDays).Unix()
+	}
+	out, err := s.st.ClearActivity(before)
+	if err != nil {
+		httpErr(w, 500, err.Error())
+		return
+	}
+	slog.Info("stats cleared", "older_than_days", *in.OlderThanDays, "sessions", out.Sessions, "devices", out.Devices, "samples", out.Samples)
+	writeJSON(w, out)
 }
