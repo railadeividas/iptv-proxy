@@ -220,7 +220,7 @@ func (s *hsSet) remove(t *hsTracker) {
 func (p *Proxy) headStartDelay() time.Duration { return p.set.Seconds("hls_head_start_seconds") }
 
 // headStartOn: the setting is above 0 and there is a segment cache to keep the segments in.
-func (p *Proxy) headStartOn() bool { return p.headStartDelay() > 0 && p.set.MB("segment_cache_mb") > 0 }
+func (p *Proxy) headStartOn() bool { return p.set.String("hls_head_start") == "on" && p.cache.on() }
 
 func (t *hsTracker) touch() { t.lastUsed.Store(time.Now().UnixNano()) }
 
@@ -235,7 +235,7 @@ func (t *hsTracker) spanLocked() time.Duration {
 
 // keepLocked is how long a segment is kept: until no player can still be given it.
 func (t *hsTracker) keepLocked() time.Duration {
-	return t.p.headStartDelay() + 3*t.spanLocked() + 30*time.Second
+	return t.p.headStartDelay() + 3*t.spanLocked() + t.p.set.Seconds("hls_head_start_keep_extra_seconds")
 }
 
 // merge takes in a playlist fetched from the server and says whether the tracker can go on following it.

@@ -279,7 +279,7 @@ func (d *dashIndex) chosen(mpd, set string) (string, bool) {
 // prefetchDASH downloads the newest segments of the representations viewers use (see above).
 func (p *Proxy) prefetchDASH(up *Upstream) {
 	n := p.set.Int("segment_prefetch_count")
-	if n <= 0 || p.set.MB("segment_cache_mb") == 0 || p.set.Seconds("segment_cache_ttl_seconds") == 0 || up.URL == nil {
+	if !p.prefetchOn() || up.URL == nil {
 		return
 	}
 	live, sets := parseDASH(up.Manifest, 2*n)
@@ -322,7 +322,7 @@ func (p *Proxy) prefetchDASH(up *Upstream) {
 			if !p.cache.startFetch(k) {
 				continue
 			}
-			go p.fetchSegment(k, pl, 0)
+			go p.fetchSegment(k, pl, p.set.Seconds("segment_prefetch_keep_seconds"))
 		}
 	}
 }

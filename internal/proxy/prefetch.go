@@ -12,10 +12,10 @@ import (
 // stalling upstream is absorbed before the player asks. It only runs for playlists a player is fetching right
 // now, never for idle channels, and needs a free connection slot for every download.
 func (p *Proxy) prefetch(up *Upstream) {
-	n := p.set.Int("segment_prefetch_count")
-	if n <= 0 || p.set.MB("segment_cache_mb") == 0 || p.set.Seconds("segment_cache_ttl_seconds") == 0 {
+	if !p.prefetchOn() {
 		return
 	}
+	n := p.set.Int("segment_prefetch_count")
 	text := string(up.Manifest)
 	if strings.Contains(text, "#EXT-X-STREAM-INF") || strings.Contains(text, "#EXT-X-BYTERANGE") {
 		return // a master playlist, or segments that are ranges of one file (never cached)
@@ -42,11 +42,16 @@ func (p *Proxy) prefetch(up *Upstream) {
 		if !p.cache.startFetch(k) {
 			continue
 		}
-		go p.fetchSegment(k, pl, 0)
+		go p.fetchSegment(k, pl, p.set.Seconds("segment_prefetch_keep_seconds"))
 	}
 }
 
-// fetchSegment downloads one segment into the cache for ttl (0 = the setting) and says whether it was kept. What the server
+// prefetchOn: the switch is on and there is a segment cache to put the segments in.
+func (p *Proxy) prefetchOn() bool {
+	return p.set.String("segment_prefetch") == "on" && p.cache.on()
+}
+
+// fetchSegment downloads one segment into the cache for ttl and says whether it was kept. What the server
 // sent must look like a segment: some servers answer 200 with "not found" for a segment that is not there (yet, or any more),
 // and that must never be kept and handed to a player.
 func (p *Proxy) fetchSegment(k string, pl Payload, ttl time.Duration) bool {

@@ -19,7 +19,7 @@ func testSettings(t *testing.T) *settings.Settings {
 	t.Cleanup(func() { st.Close() })
 	set := settings.New(st)
 	// the tests of other features run without the head start (it has its own tests): it holds live HLS playlists back
-	set.Apply(map[string]any{"hls_head_start_seconds": 0.0})
+	set.Apply(map[string]any{"hls_head_start": "off"})
 	return set
 }
 
@@ -65,7 +65,7 @@ func TestSegmentCacheCanBeSwitchedOff(t *testing.T) {
 	if _, ok := c.get("a"); !ok {
 		t.Fatal("cache on by default")
 	}
-	set.Apply(map[string]any{"segment_cache_mb": 0.0})
+	set.Apply(map[string]any{"segment_cache": "off"})
 	c.put("b", cached{data: []byte("12345")})
 	if _, ok := c.get("b"); ok {
 		t.Fatal("size 0 turns the cache off")

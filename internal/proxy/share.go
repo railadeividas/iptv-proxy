@@ -49,6 +49,8 @@ type shareSet struct {
 	bytes   atomic.Uint64 // bytes those viewers were served from the buffer
 	streams atomic.Int64  // shared streams open now
 	viewers atomic.Int64  // viewers on them
+	full    atomic.Uint64 // streams left unshared because the total buffer memory was used
+	memory  atomic.Int64  // bytes of buffer held by the shared streams open now (against shared_stream_total_mb)
 }
 
 func (s *shareSet) getOrStart(p *Proxy, key string, pl Payload) (*hub, bool) {
@@ -66,7 +68,22 @@ func (s *shareSet) getOrStart(p *Proxy, key string, pl Payload) (*hub, bool) {
 	return h, true
 }
 
+// reserve takes size bytes of the total the shared streams may hold and says whether there was room.
+func (s *shareSet) reserve(h *hub, size, limit int64) bool {
+	for {
+		cur := s.memory.Load()
+		if cur+size > limit {
+			return false
+		}
+		if s.memory.CompareAndSwap(cur, cur+size) {
+			h.reserved.Store(size)
+			return true
+		}
+	}
+}
+
 func (s *shareSet) remove(h *hub) {
+	s.memory.Add(-h.reserved.Swap(0)) // gives the buffer back, once, however many times the hub is removed
 	s.mu.Lock()
 	if s.hubs[h.key] == h {
 		delete(s.hubs, h.key)
@@ -81,11 +98,12 @@ type hub struct {
 	key string
 	pl  Payload
 
-	ready  chan struct{} // closed once it is known whether the stream is shared
-	shared bool          // valid after ready is closed
-	hdr    http.Header   // what players are told about the stream
-	url    *url.URL
-	cancel context.CancelFunc // ends the connection to the server
+	reserved atomic.Int64  // bytes of the total this hub holds
+	ready    chan struct{} // closed once it is known whether the stream is shared
+	shared   bool          // valid after ready is closed
+	hdr      http.Header   // what players are told about the stream
+	url      *url.URL
+	cancel   context.CancelFunc // ends the connection to the server
 
 	mu      sync.Mutex
 	cond    *sync.Cond
@@ -397,8 +415,14 @@ func (p *Proxy) leadShared(ctx context.Context, in *http.Request, pl Payload, h 
 		up.body = io.MultiReader(bytes.NewReader(first), up.body)
 		return keep(), nil
 	}
+	size := p.set.MB("shared_stream_buffer_mb")
+	if !p.shares.reserve(h, size, p.set.MB("shared_stream_total_mb")) {
+		up.body = io.MultiReader(bytes.NewReader(first), up.body)
+		p.shares.full.Add(1)
+		return keep(), nil // the shared streams already hold the most memory they may: this one is not shared
+	}
 	stop() // from here on the shared stream owns the connection
-	h.ring = make([]byte, p.set.MB("shared_stream_buffer_mb"))
+	h.ring = make([]byte, size)
 	h.hdr = http.Header{}
 	for _, k := range []string{"Content-Type", "Cache-Control"} {
 		if v := up.resp.Header.Get(k); v != "" {

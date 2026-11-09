@@ -72,7 +72,7 @@ func TestCacheMissesCountSegmentsOnly(t *testing.T) {
 	defer up.Close()
 	set := testSettings(t)
 	px := New(NewSigner([]byte("0123456789abcdef0123456789abcdef")), set)
-	set.Apply(map[string]any{"segment_prefetch_count": 0.0, "playlist_cache_seconds": 0.0}) // only what the players ask for
+	set.Apply(map[string]any{"segment_prefetch": "off", "playlist_cache_seconds": 0.0}) // only what the players ask for
 
 	for i := 0; i < 3; i++ {
 		signedGet(t, px, Payload{U: up.URL + "/live.m3u8"})

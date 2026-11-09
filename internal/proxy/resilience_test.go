@@ -117,13 +117,13 @@ func TestPrefetchFillsTheCache(t *testing.T) {
 	px := New(NewSigner([]byte("0123456789abcdef0123456789abcdef")), set)
 	pl := Payload{U: base + "/live.m3u8"}
 
-	set.Apply(map[string]any{"segment_prefetch_count": 0.0, "playlist_cache_seconds": 0.0}) // these requests must each reach the server
+	set.Apply(map[string]any{"segment_prefetch": "off", "playlist_cache_seconds": 0.0}) // these requests must each reach the server
 	signedGet(t, px, pl)
 	time.Sleep(100 * time.Millisecond)
 	if segHits.Load() != 0 {
 		t.Fatal("0 turns prefetch off")
 	}
-	set.Apply(map[string]any{"segment_prefetch_count": 2.0})
+	set.Apply(map[string]any{"segment_prefetch": "on", "segment_prefetch_count": 2.0})
 	signedGet(t, px, pl)
 	for i := 0; i < 200 && !(px.cache.has(cacheKey(Payload{U: base + "/s2.ts"})) && px.cache.has(cacheKey(Payload{U: base + "/s3.ts"}))); i++ {
 		time.Sleep(10 * time.Millisecond)
@@ -211,7 +211,7 @@ func TestPrefetchCountsAsUpstreamRequests(t *testing.T) {
 	defer up.Close()
 	set := testSettings(t)
 	px := New(NewSigner([]byte("0123456789abcdef0123456789abcdef")), set)
-	set.Apply(map[string]any{"segment_prefetch_count": 2.0})
+	set.Apply(map[string]any{"segment_prefetch": "on", "segment_prefetch_count": 2.0})
 	signedGet(t, px, Payload{U: up.URL + "/live.m3u8"})
 	for i := 0; i < 200 && px.Stats().UpstreamOK < 3; i++ {
 		time.Sleep(10 * time.Millisecond)

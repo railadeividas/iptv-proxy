@@ -192,13 +192,13 @@ func TestDASHPrefetchFollowsTheQualityViewersPlay(t *testing.T) {
 
 func TestDASHPrefetchFollowsTheSetting(t *testing.T) {
 	srv := newDASHServer(t)
-	px := newSharingProxy(t, map[string]any{"playlist_cache_seconds": 0.0, "segment_prefetch_count": 0.0})
+	px := newSharingProxy(t, map[string]any{"playlist_cache_seconds": 0.0, "segment_prefetch": "off"})
 	signedGet(t, px, Payload{U: srv.URL + "/live/manifest.mpd"})
 	time.Sleep(150 * time.Millisecond)
 	if srv.any("/live/audio/") {
 		t.Fatal("off: nothing is fetched ahead")
 	}
-	if errs := px.set.Apply(map[string]any{"segment_prefetch_count": 2.0}); errs != nil {
+	if errs := px.set.Apply(map[string]any{"segment_prefetch": "on", "segment_prefetch_count": 2.0}); errs != nil {
 		t.Fatal(errs)
 	}
 	signedGet(t, px, Payload{U: srv.URL + "/live/manifest.mpd"})

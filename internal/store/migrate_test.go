@@ -404,7 +404,7 @@ func TestMigrateAddsActivity(t *testing.T) {
 func TestMigrateAddsStatsSamples(t *testing.T) {
 	dir := t.TempDir()
 	real := migrations
-	withMigrations(t, real[:len(real)-1]) // the database as it was before this migration
+	withMigrations(t, real[:len(real)-2]) // the database as it was before this migration
 	st, err := Open(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -462,5 +462,51 @@ func TestMigrateAddsStatsSamples(t *testing.T) {
 	defer fresh.Close()
 	if _, err := fresh.DB.Exec(`SELECT hour, cache_hits FROM stats_samples`); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A stored 0 that used to switch a cache feature off becomes the explicit switch; other stored values stay.
+func TestMigrateCacheSwitches(t *testing.T) {
+	dir := t.TempDir()
+	real := migrations
+	withMigrations(t, real[:len(real)-1])
+	st, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k, v := range map[string]string{
+		"segment_cache_ttl_seconds": "0", "segment_prefetch_count": "4", "hls_head_start_seconds": "0",
+		"segment_cache_mb": "512", "health_scope": `"all"`,
+	} {
+		st.DB.Exec(`INSERT INTO meta(key,value) VALUES(?,?)`, "setting."+k, v)
+	}
+	st.Close()
+
+	withMigrations(t, real)
+	st, err = Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	for k, want := range map[string]string{
+		"segment_share": `"off"`, "segment_prefetch": `"off"`, "hls_head_start": `"off"`, // ttl 0 and head start 0 became switches
+		"segment_cache_ttl_seconds": "", "hls_head_start_seconds": "", // the zero rows are gone: the default returns with the switch
+		"segment_cache": "", "segment_cache_mb": "512", "segment_prefetch_count": "4", "health_scope": `"all"`, // untouched
+	} {
+		if got := st.Meta("setting." + k); got != want {
+			t.Errorf("%s = %q, want %q", k, got, want)
+		}
+	}
+}
+
+// A brand-new database runs the migration too and has nothing to convert.
+func TestMigrateCacheSwitchesOnNewDatabase(t *testing.T) {
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if st.Meta("setting.segment_cache") != "" || st.Meta("setting.hls_head_start") != "" {
+		t.Fatal("defaults are not stored")
 	}
 }

@@ -64,17 +64,24 @@ func (c *segCache) get(k string) (cached, bool) {
 	return v, true
 }
 
-func (c *segCache) put(k string, v cached) { c.putTTL(k, v, 0) }
+// on says whether the segment cache is switched on (the master switch).
+func (c *segCache) on() bool {
+	return c.set.String("segment_cache") == "on" && c.set.MB("segment_cache_mb") > 0
+}
 
-// putTTL keeps a copy for ttl (0 = the setting segment_cache_ttl_seconds) and says whether it was kept: not when the cache is
-// switched off or full of fresh copies.
-func (c *segCache) putTTL(k string, v cached, ttl time.Duration) bool {
-	max, setTTL := int(c.set.MB("segment_cache_mb")), c.set.Seconds("segment_cache_ttl_seconds")
-	if ttl == 0 {
-		ttl = setTTL
+// put keeps a segment a player asked for, for the other viewers: only when sharing segments is switched on.
+func (c *segCache) put(k string, v cached) {
+	if c.set.String("segment_share") == "on" {
+		c.putTTL(k, v, c.set.Seconds("segment_cache_ttl_seconds"))
 	}
-	if max == 0 || ttl == 0 {
-		return false // cache switched off
+}
+
+// putTTL keeps a copy for ttl and says whether it was kept: not when the cache is switched off or full of fresh copies.
+// Every feature that uses the cache decides its own ttl.
+func (c *segCache) putTTL(k string, v cached, ttl time.Duration) bool {
+	max := int(c.set.MB("segment_cache_mb"))
+	if !c.on() || ttl <= 0 {
+		return false
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()

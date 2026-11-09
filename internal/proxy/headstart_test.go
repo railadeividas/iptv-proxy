@@ -99,13 +99,16 @@ func newHSProxy(t *testing.T, delay float64, extra map[string]any) *Proxy {
 	old := liveMinPoll
 	liveMinPoll = 40 * time.Millisecond
 	t.Cleanup(func() { liveMinPoll = old })
-	apply := map[string]any{"hls_head_start_seconds": delay, "upstream_retry_delay_ms": 0.0, "playlist_cache_seconds": 0.0}
+	apply := map[string]any{"hls_head_start": "on", "hls_head_start_seconds": delay, "upstream_retry_delay_ms": 0.0, "playlist_cache_seconds": 0.0}
+	if delay == 0 {
+		apply = map[string]any{"hls_head_start": "off", "upstream_retry_delay_ms": 0.0, "playlist_cache_seconds": 0.0}
+	}
 	for k, v := range extra {
 		apply[k] = v
 	}
 	px := newSharingProxy(t, apply)
 	t.Cleanup(func() { // trackers must be gone before liveMinPoll is put back (they read it)
-		px.set.Apply(map[string]any{"hls_head_start_seconds": 0.0})
+		px.set.Apply(map[string]any{"hls_head_start": "off"})
 		for i := 0; i < 300 && px.Stats().HeadStartStreams != 0; i++ {
 			time.Sleep(10 * time.Millisecond)
 		}
@@ -263,7 +266,7 @@ func TestHeadStartFollowsTheSettingAndIsOffAtZero(t *testing.T) {
 	if px.Stats().HeadStartStreams != 0 {
 		t.Fatal("off: nothing is followed")
 	}
-	if errs := px.set.Apply(map[string]any{"hls_head_start_seconds": 1.0}); errs != nil {
+	if errs := px.set.Apply(map[string]any{"hls_head_start": "on", "hls_head_start_seconds": 1.0}); errs != nil {
 		t.Fatal(errs)
 	}
 	time.Sleep(300 * time.Millisecond)
@@ -274,7 +277,7 @@ func TestHeadStartFollowsTheSettingAndIsOffAtZero(t *testing.T) {
 	if behind := l.newest() - segSeq(t, px, links[len(links)-1]); behind < 7 || px.Stats().HeadStartStreams != 1 {
 		t.Fatalf("on, without a restart: %d behind, %+v", behind, px.Stats())
 	}
-	if errs := px.set.Apply(map[string]any{"hls_head_start_seconds": 0.0}); errs != nil {
+	if errs := px.set.Apply(map[string]any{"hls_head_start": "off"}); errs != nil {
 		t.Fatal(errs)
 	}
 	_, body = playlistOf(t, px, l, 1)
@@ -505,5 +508,41 @@ func TestRangeFromACachedSegment(t *testing.T) {
 	do("bytes=0-1,5-6") // several ranges: the server's business
 	if hits.Load() != 1 {
 		t.Fatalf("what is not ours to answer goes to the server: %d requests", hits.Load())
+	}
+}
+
+func TestHeadStartKeepTimeFollowsTheSetting(t *testing.T) {
+	px := newHSProxy(t, 10, nil)
+	tr := &hsTracker{p: px, target: 5}
+	base := tr.keepLocked()
+	px.set.Apply(map[string]any{"hls_head_start_keep_extra_seconds": 90.0})
+	if got := tr.keepLocked() - base; got != 60*time.Second {
+		t.Fatalf("the extra time is a setting: %v", got)
+	}
+}
+
+// The cache features are independent: each has its own switch, and only the master switch turns them all off.
+func TestCacheFeaturesAreIndependent(t *testing.T) {
+	px := newHSProxy(t, 5, nil)
+	c := px.cache
+	put := func(k string) bool { c.put(k, cached{data: []byte("abc")}); _, ok := c.peek(k); return ok }
+	if !put("a") || !px.prefetchOn() || !px.headStartOn() {
+		t.Fatal("all on by default")
+	}
+	px.set.Apply(map[string]any{"segment_share": "off"})
+	if put("b") || !px.prefetchOn() || !px.headStartOn() || !c.putTTL("c", cached{data: []byte("abc")}, time.Minute) {
+		t.Fatal("sharing off: only what players ask for is not kept")
+	}
+	px.set.Apply(map[string]any{"segment_share": "on", "segment_prefetch": "off"})
+	if !put("d") || px.prefetchOn() || !px.headStartOn() {
+		t.Fatal("prefetch off: the others go on")
+	}
+	px.set.Apply(map[string]any{"segment_prefetch": "on", "hls_head_start": "off"})
+	if !put("e") || !px.prefetchOn() || px.headStartOn() {
+		t.Fatal("head start off: the others go on")
+	}
+	px.set.Apply(map[string]any{"hls_head_start": "on", "segment_cache": "off"})
+	if put("f") || px.prefetchOn() || px.headStartOn() || c.putTTL("g", cached{data: []byte("abc")}, time.Minute) || px.Stats().CacheLimit != 0 {
+		t.Fatal("the master switch turns them all off")
 	}
 }

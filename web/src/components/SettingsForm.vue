@@ -19,6 +19,17 @@ const sections = computed(() => {
   for (const f of mine.value) (by.get(f.section) || by.set(f.section, []).get(f.section)).push(f)
   return [...by].map(([title, list]) => ({ title, list }))
 })
+// a setting that depends on an on/off switch is muted while that switch (or one it depends on in turn) is off; it uses the draft,
+// so the page reacts before saving
+const byKey = computed(() => Object.fromEntries(fields.value.map((f) => [f.key, f])))
+const muted = (f) => {
+  for (let n = f.needs, i = 0; n && i < 5; n = byKey.value[n]?.needs, i++) if (draft.value[n] === 'off') return true
+  return false
+}
+const mutedBy = (f) => {
+  for (let n = f.needs, i = 0; n && i < 5; n = byKey.value[n]?.needs, i++) if (draft.value[n] === 'off') return byKey.value[n]?.label || n
+  return ''
+}
 const changed = computed(() => mine.value.filter((f) => draft.value[f.key] !== saved.value[f.key]))
 
 async function load() {
@@ -77,23 +88,24 @@ const optionLabel = (f, v) => f.options.find((o) => o.value === v)?.label ?? v
   <div v-if="loaded" class="forms">
     <section v-for="s in sections" :key="s.title" class="card">
       <h2>{{ s.title }}</h2>
-      <div v-for="f in s.list" :key="f.key" class="field" :class="{ bad: errors[f.key] }">
+      <div v-for="f in s.list" :key="f.key" class="field" :class="{ bad: errors[f.key], muted: muted(f) }">
         <div class="what">
           <label :for="'set-' + f.key">{{ f.label }}</label>
+          <p v-if="muted(f)" class="muted off-note">Not used while “{{ mutedBy(f) }}” is off</p>
           <p v-if="f.help" class="muted help">{{ f.help }}</p>
         </div>
         <div class="ctl">
           <div class="inp" :class="{ narrow: f.kind === 'int' }">
-            <select v-if="f.kind === 'enum'" :id="'set-' + f.key" v-model="draft[f.key]">
+            <select v-if="f.kind === 'enum'" :disabled="muted(f)" :id="'set-' + f.key" v-model="draft[f.key]">
               <option v-for="o in f.options" :key="o.value" :value="o.value">{{ o.label }}</option>
             </select>
-            <select v-else-if="f.kind === 'zone'" :id="'set-' + f.key" v-model="draft[f.key]">
+            <select v-else-if="f.kind === 'zone'" :disabled="muted(f)" :id="'set-' + f.key" v-model="draft[f.key]">
               <option value="">Server time zone</option>
               <option v-for="z in zoneChoices(draft[f.key])" :key="z" :value="z">{{ zoneLabel(z) }}</option>
             </select>
-            <input v-else-if="f.kind === 'int'" :id="'set-' + f.key" v-model.number="draft[f.key]" type="number" step="1" :min="f.min" :max="f.max" inputmode="numeric">
-            <input v-else-if="f.kind === 'time'" :id="'set-' + f.key" v-model="draft[f.key]" type="time">
-            <input v-else :id="'set-' + f.key" v-model="draft[f.key]" type="text" spellcheck="false" autocomplete="off" :placeholder="placeholder(f)">
+            <input v-else-if="f.kind === 'int'" :disabled="muted(f)" :id="'set-' + f.key" v-model.number="draft[f.key]" type="number" step="1" :min="f.min" :max="f.max" inputmode="numeric">
+            <input v-else-if="f.kind === 'time'" :disabled="muted(f)" :id="'set-' + f.key" v-model="draft[f.key]" type="time">
+            <input v-else :disabled="muted(f)" :id="'set-' + f.key" v-model="draft[f.key]" type="text" spellcheck="false" autocomplete="off" :placeholder="placeholder(f)">
             <span v-if="f.kind === 'int' && f.unit" class="unit">{{ f.unit }}</span>
           </div>
           <p v-if="errors[f.key]" class="err msg">{{ errors[f.key] }}</p>
@@ -135,6 +147,8 @@ const optionLabel = (f, v) => f.options.find((o) => o.value === v)?.label ?? v
 .mono { font-family:ui-monospace, monospace; }
 .link { height:auto; padding:0; border:0; background:none; color:var(--accent); font-size:12px; cursor:pointer; }
 .link:hover { text-decoration:underline; border:0; }
+.field.muted .what, .field.muted .inp, .field.muted .msg { opacity:.5 }
+.off-note { margin:2px 0 0; font-size:12px; font-style:italic; }
 .field.bad .inp input, .field.bad .inp select { border-color:var(--bad); }
 @media (max-width:760px) { .field { grid-template-columns:1fr; } }
 </style>

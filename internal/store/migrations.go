@@ -106,4 +106,46 @@ var migrations = []migration{
 		}
 		return nil
 	}},
+	{name: "cache settings get explicit on/off switches: a stored 0 (the old way to turn a feature off) becomes the switch set to off", up: func(tx *sql.Tx) error {
+		// Before: segment_cache_mb 0 = cache off, segment_cache_ttl_seconds 0 = no sharing and no prefetch,
+		// segment_prefetch_count 0 = prefetch off, hls_head_start_seconds 0 = head start off.
+		// Now each has a switch (segment_cache, segment_share, segment_prefetch, hls_head_start) and the number has a minimum of 1,
+		// so the stored 0 is turned into the switch and the number row is dropped (the default applies when it is switched on again).
+		// Only values someone changed are stored; an install that never touched them keeps the defaults (all on).
+		set := func(key, val string) error {
+			_, err := tx.Exec(`INSERT OR REPLACE INTO meta(key,value) VALUES(?,?)`, "setting."+key, val)
+			return err
+		}
+		zero := func(key string) (bool, error) {
+			var n int
+			err := tx.QueryRow(`SELECT COUNT(*) FROM meta WHERE key=? AND TRIM(value) IN ('0','0.0')`, "setting."+key).Scan(&n)
+			return n > 0, err
+		}
+		for _, c := range []struct {
+			num  string
+			offs []string
+		}{
+			{"segment_cache_mb", []string{"segment_cache"}},
+			{"segment_cache_ttl_seconds", []string{"segment_share", "segment_prefetch"}},
+			{"segment_prefetch_count", []string{"segment_prefetch"}},
+			{"hls_head_start_seconds", []string{"hls_head_start"}},
+		} {
+			z, err := zero(c.num)
+			if err != nil {
+				return err
+			}
+			if !z {
+				continue
+			}
+			for _, k := range c.offs {
+				if err := set(k, `"off"`); err != nil {
+					return err
+				}
+			}
+			if _, err := tx.Exec(`DELETE FROM meta WHERE key=?`, "setting."+c.num); err != nil {
+				return err
+			}
+		}
+		return nil
+	}},
 }

@@ -210,7 +210,7 @@ type Stats struct {
 
 func (p *Proxy) Stats() Stats {
 	n, b := p.cache.usage()
-	return Stats{InUse: p.InUse(), Limit: p.set.Int("max_connections"), CacheEntries: n, CacheBytes: int64(b), CacheLimit: p.set.MB("segment_cache_mb"),
+	return Stats{InUse: p.InUse(), Limit: p.set.Int("max_connections"), CacheEntries: n, CacheBytes: int64(b), CacheLimit: p.cacheLimit(),
 		CacheHits: p.cache.hits.Load(), CacheMisses: p.cache.misses.Load(), UpstreamOK: p.upstreamOK.Load(), UpstreamErrors: p.upstreamErr.Load(),
 		CacheHitBytes: p.cache.hitBytes.Load() + p.shares.bytes.Load(), CacheStores: p.cache.stores.Load(), CacheRejected: p.cache.rejected.Load(),
 		Prefetched: p.prefetched.Load(), Coalesced: p.coalesced.Load(), Retries: p.retries.Load(), Holdovers: p.holdovers.Load(),
@@ -688,4 +688,12 @@ func (p *Proxy) serveRange(w http.ResponseWriter, h string, c cached) bool {
 		return true
 	}
 	return false
+}
+
+// cacheLimit is the size of the segment cache in bytes, 0 when it is switched off.
+func (p *Proxy) cacheLimit() int64 {
+	if !p.cache.on() {
+		return 0
+	}
+	return p.set.MB("segment_cache_mb")
 }

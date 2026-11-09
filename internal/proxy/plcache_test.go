@@ -190,7 +190,7 @@ func TestWholeFileRangeIsAPlainRequest(t *testing.T) {
 		w.Write([]byte(strings.Repeat("v", 5000)))
 	}))
 	t.Cleanup(up.Close)
-	px := newSharingProxy(t, map[string]any{"segment_prefetch_count": 2.0})
+	px := newSharingProxy(t, map[string]any{"segment_prefetch": "on", "segment_prefetch_count": 2.0})
 	ffmpegGet := func(path string) (int, string) {
 		t.Helper()
 		pl := Payload{U: up.URL + path, E: time.Now().Add(time.Hour).Unix()}

@@ -167,3 +167,21 @@ func TestTimeAndZoneValues(t *testing.T) {
 		t.Fatalf("both may be cleared: %v", errs)
 	}
 }
+
+// Needs points at an on/off setting that exists, and never in a circle.
+func TestNeedsPointAtSwitches(t *testing.T) {
+	by := map[string]Def{}
+	for _, d := range Defs {
+		by[d.Key] = d
+	}
+	for _, d := range Defs {
+		seen := map[string]bool{d.Key: true}
+		for n := d.Needs; n != ""; n = by[n].Needs {
+			sw, ok := by[n]
+			if !ok || sw.Kind != Enum || len(sw.Options) != 2 || sw.Options[0].Value != "on" || seen[n] {
+				t.Fatalf("%s needs %q: it must be an existing on/off setting, without a loop", d.Key, n)
+			}
+			seen[n] = true
+		}
+	}
+}

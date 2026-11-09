@@ -309,3 +309,41 @@ func TestSharedStreamNeverForRangesOrPlaylists(t *testing.T) {
 		t.Fatal("playlists, ranges and HEAD are never shared")
 	}
 }
+
+// All shared streams together may hold only shared_stream_total_mb of buffer; a stream over it is simply not shared.
+func TestSharedStreamsStayInsideTheTotalMemory(t *testing.T) {
+	srv := newTSServer(t, 2*time.Millisecond, 0)
+	px := newSharingProxy(t, map[string]any{"shared_stream_buffer_mb": 4.0, "shared_stream_total_mb": 8.0})
+	a, cancelA := openLive(t, px, srv.URL+"/a")
+	b, cancelB := openLive(t, px, srv.URL+"/b")
+	c, _ := openLive(t, px, srv.URL+"/c")
+	for _, u := range []*Upstream{a, b, c} {
+		readPackets(t, u, 3)
+	}
+	if st := px.Stats(); st.SharedStreams != 2 || px.shares.memory.Load() != 8<<20 || px.shares.full.Load() != 1 {
+		t.Fatalf("two streams fit, the third gets its own connection: %+v memory=%d", st, px.shares.memory.Load())
+	}
+	d, _ := openLive(t, px, srv.URL+"/c") // still over the total: not joined to anything, own connection
+	readPackets(t, d, 3)
+	if px.Stats().SharedJoins != 0 {
+		t.Fatal("an unshared stream is not joined")
+	}
+	cancelA()
+	cancelB()
+	a.Close()
+	b.Close()
+	waitFor(t, "the buffers to be given back", func() bool { return px.shares.memory.Load() == 0 })
+	e, _ := openLive(t, px, srv.URL+"/e")
+	readPackets(t, e, 3)
+	if px.Stats().SharedStreams != 1 || px.shares.memory.Load() != 4<<20 {
+		t.Fatalf("room again: %+v", px.Stats())
+	}
+	if errs := px.set.Apply(map[string]any{"shared_stream_total_mb": 1.0}); errs != nil { // a total below one buffer: nothing new is shared
+		t.Fatal(errs)
+	}
+	f, _ := openLive(t, px, srv.URL+"/f")
+	readPackets(t, f, 3)
+	if px.Stats().SharedStreams != 1 {
+		t.Fatalf("the setting applies at once: %+v", px.Stats())
+	}
+}
