@@ -69,9 +69,11 @@ working, and only remove the old path in a later commit, once people have had ti
 
 ### Builds and versions
 
-- There are no tags and no GitHub Releases. Every push to `main` is tested and published by `.github/workflows/release.yml` as its
+- There are no git tags and no GitHub Releases. Every push to `main` is tested and published by `.github/workflows/release.yml` as its
   own image, `ghcr.io/<owner>/<repo>:<short commit hash>`, and `latest` follows the newest one (builds never cancel each other; a
-  separate job moves `latest` one at a time and only forward). **Every commit on `main` therefore ships**: keep `main`
+  separate job moves `latest` one at a time and only forward). A manual run ("Run workflow") can add extra tags through its `tags`
+  input; the short hash is always there, and `latest` is moved only when the run is from `main` (through the same job and check).
+  **Every commit on `main` therefore ships**: keep `main`
   working, and never leave a migration or a contract change half done between commits.
 - The project's GitHub address lives in `web/src/about.js` (the version badge links to the commit, the footer links use it).
 - The version is the short commit hash and lives only in git. The workflow passes it to the Docker build (`VERSION`), which sets

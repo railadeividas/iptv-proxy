@@ -1,12 +1,19 @@
 name: Publish image
 # Every push to main is tested and published as its own image, tagged with the short commit hash (for example
-# ghcr.io/<owner>/<repo>:ef711d2); `latest` follows the newest of them. There are no tags and no GitHub Releases; the commit hash is the version.
+# ghcr.io/<owner>/<repo>:ef711d2); `latest` follows the newest of them. There are no git tags and no GitHub Releases; the commit hash is the version.
+# A manual run can add more image tags (input `tags`); the hash tag is always there, and `latest` only moves for runs from main.
 on:
   push:
     branches: [main]
   schedule:
     - cron: "0 4 * * 1" # weekly rebuild of main picks up iptv-org/epg updates
   workflow_dispatch:
+    inputs:
+      tags:
+        description: "Extra image tags, separated by commas or spaces (optional). The short commit hash is always added; `latest` too when run from main."
+        required: false
+        default: ""
+        type: string
 permissions:
   contents: read
   packages: write
@@ -31,6 +38,21 @@ jobs:
       # the version shown in the app: the short commit hash
       - id: ver
         run: echo "version=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      # Tags typed into the manual run (empty on every other event), one `type=raw` line each. `latest` is never set here: only the
+      # `latest` job below moves it, so a manual tag run can't bypass its checks.
+      - id: extra
+        env:
+          INPUT_TAGS: ${{ inputs.tags }}
+        run: |
+          {
+            echo "tags<<EOF"
+            for t in $(printf '%s' "$INPUT_TAGS" | tr ',' ' '); do
+              [[ "$t" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || { echo "::error::Invalid tag: $t" >&2; exit 1; }
+              echo "type=raw,value=$t"
+            done
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+        shell: bash
       - id: meta
         uses: docker/metadata-action@v6
         with:
@@ -38,6 +60,7 @@ jobs:
           flavor: latest=false
           tags: |
             type=sha,prefix=,format=short
+            ${{ steps.extra.outputs.tags }}
       - uses: docker/build-push-action@v7
         with:
           context: .
@@ -53,6 +76,8 @@ jobs:
   # commit on main already has its image, so a slow older build can never move `latest` back.
   latest:
     needs: image
+    # push and schedule always run on main; a manual run only counts when started from main
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     concurrency:
       group: move-latest
