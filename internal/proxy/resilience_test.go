@@ -109,7 +109,7 @@ func TestPrefetchFillsTheCache(t *testing.T) {
 		}
 		segHits.Add(1)
 		w.Header().Set("Content-Type", "video/mp2t")
-		w.Write([]byte("data-" + r.URL.Path))
+		w.Write([]byte(strings.Repeat("data-"+r.URL.Path, 30))) // a segment is more than a few bytes
 	}))
 	defer up.Close()
 	base = up.URL
@@ -132,13 +132,13 @@ func TestPrefetchFillsTheCache(t *testing.T) {
 		t.Fatal("the newest two segments must be cached, and only those")
 	}
 	n := segHits.Load()
-	if code, body := signedGet(t, px, Payload{U: base + "/s3.ts"}); code != 200 || body != "data-/s3.ts" || segHits.Load() != n {
+	if code, body := signedGet(t, px, Payload{U: base + "/s3.ts"}); code != 200 || body != strings.Repeat("data-/s3.ts", 30) || segHits.Load() != n {
 		t.Fatalf("player must be served from the cache: %d %q", code, body)
 	}
 	for i := 0; i < 200 && px.Stats().Prefetched < 2; i++ {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if st := px.Stats(); st.Prefetched != 2 || st.CacheHitBytes != uint64(len("data-/s3.ts")) {
+	if st := px.Stats(); st.Prefetched != 2 || st.CacheHitBytes != uint64(len(strings.Repeat("data-/s3.ts", 30))) {
 		t.Fatalf("prefetch and cache bytes are counted: %+v", st)
 	}
 }
@@ -159,7 +159,7 @@ func TestPrefetchRespectsThePerServerLimit(t *testing.T) {
 		default:
 			segHits.Add(1)
 			w.Header().Set("Content-Type", "video/mp2t")
-			w.Write([]byte("seg"))
+			w.Write([]byte(strings.Repeat("seg", 100)))
 		}
 	}))
 	defer up.Close()

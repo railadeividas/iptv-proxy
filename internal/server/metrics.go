@@ -184,6 +184,8 @@ func (s *Server) collect() *metrics.Set {
 	m.Gauge("iptv_proxy_shared_viewers", "Viewers on shared live streams now.", float64(px.SharedViewers))
 	m.Counter("iptv_proxy_shared_joins_total", "Viewers that joined a live stream somebody else had opened.", float64(px.SharedJoins))
 	m.Counter("iptv_proxy_playlist_cache_hits_total", "Playlists handed out from a copy instead of asking the stream server.", float64(px.PlaylistHits))
+	m.Gauge("iptv_proxy_hls_head_start_streams", "Live HLS playlists the proxy follows to serve them a few seconds behind the provider.", float64(px.HeadStartStreams))
+	m.Counter("iptv_proxy_hls_head_start_playlists_total", "Live HLS playlists the proxy started following for a head start.", float64(px.HeadStartPlaylists))
 	m.Counter("iptv_proxy_cache_stores_total", "Segments put in the cache.", float64(px.CacheStores))
 	m.Counter("iptv_proxy_cache_rejected_total", "Segments not cached because the cache was full.", float64(px.CacheRejected))
 	m.Counter("iptv_proxy_prefetched_segments_total", "Segments fetched ahead of the player.", float64(px.Prefetched))

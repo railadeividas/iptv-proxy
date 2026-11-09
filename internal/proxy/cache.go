@@ -64,10 +64,17 @@ func (c *segCache) get(k string) (cached, bool) {
 	return v, true
 }
 
-func (c *segCache) put(k string, v cached) {
-	max, ttl := int(c.set.MB("segment_cache_mb")), c.set.Seconds("segment_cache_ttl_seconds")
+func (c *segCache) put(k string, v cached) { c.putTTL(k, v, 0) }
+
+// putTTL keeps a copy for ttl (0 = the setting segment_cache_ttl_seconds) and says whether it was kept: not when the cache is
+// switched off or full of fresh copies.
+func (c *segCache) putTTL(k string, v cached, ttl time.Duration) bool {
+	max, setTTL := int(c.set.MB("segment_cache_mb")), c.set.Seconds("segment_cache_ttl_seconds")
+	if ttl == 0 {
+		ttl = setTTL
+	}
 	if max == 0 || ttl == 0 {
-		return // cache switched off
+		return false // cache switched off
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -81,7 +88,7 @@ func (c *segCache) put(k string, v cached) {
 		}
 		if c.size+len(v.data) > max {
 			c.rejected.Add(1)
-			return
+			return false
 		}
 	}
 	if old, ok := c.m[k]; ok {
@@ -91,6 +98,23 @@ func (c *segCache) put(k string, v cached) {
 	c.m[k] = v
 	c.size += len(v.data)
 	c.stores.Add(1)
+	return true
+}
+
+// peek returns a fresh copy without counting a hit (the caller counts it with noteHit when it really serves it).
+func (c *segCache) peek(k string) (cached, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	v, ok := c.m[k]
+	if !ok || time.Now().After(v.expires) {
+		return cached{}, false
+	}
+	return v, true
+}
+
+func (c *segCache) noteHit(bytes int) {
+	c.hits.Add(1)
+	c.hitBytes.Add(uint64(bytes))
 }
 
 // usage is what the cache holds now.

@@ -245,7 +245,7 @@ func TestMetricsEndpoint(t *testing.T) {
 	if valueOf(t, body, "iptv_proxy_upstream_requests_total{result=\"ok\"}") < 2 {
 		t.Error("upstream requests")
 	}
-	for _, name := range []string{"iptv_build_info", "iptv_start_time_seconds", "go_goroutines", "iptv_health_running", "iptv_sync_last_success_timestamp_seconds", "iptv_epg_enabled", "iptv_proxy_cache_limit_bytes", "iptv_proxy_cache_hit_bytes_total", "iptv_proxy_shared_streams", "iptv_proxy_shared_viewers", "iptv_proxy_shared_joins_total", "iptv_proxy_playlist_cache_hits_total", "iptv_proxy_cache_stores_total", "iptv_proxy_cache_rejected_total", "iptv_proxy_prefetched_segments_total", "iptv_proxy_coalesced_requests_total", "iptv_proxy_upstream_retries_total", "iptv_proxy_playlist_holdovers_total", "iptv_websocket_clients"} {
+	for _, name := range []string{"iptv_build_info", "iptv_start_time_seconds", "go_goroutines", "iptv_health_running", "iptv_sync_last_success_timestamp_seconds", "iptv_epg_enabled", "iptv_proxy_cache_limit_bytes", "iptv_proxy_cache_hit_bytes_total", "iptv_proxy_shared_streams", "iptv_proxy_shared_viewers", "iptv_proxy_shared_joins_total", "iptv_proxy_playlist_cache_hits_total", "iptv_proxy_hls_head_start_streams", "iptv_proxy_hls_head_start_playlists_total", "iptv_proxy_cache_stores_total", "iptv_proxy_cache_rejected_total", "iptv_proxy_prefetched_segments_total", "iptv_proxy_coalesced_requests_total", "iptv_proxy_upstream_retries_total", "iptv_proxy_playlist_holdovers_total", "iptv_websocket_clients"} {
 		valueOf(t, body, name)
 	}
 

@@ -322,7 +322,7 @@ func (p *Proxy) prefetchDASH(up *Upstream) {
 			if !p.cache.startFetch(k) {
 				continue
 			}
-			go p.fetchSegment(k, pl)
+			go p.fetchSegment(k, pl, 0)
 		}
 	}
 }

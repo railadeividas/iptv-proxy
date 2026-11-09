@@ -134,6 +134,23 @@ func (p *Proxy) cachedPlaylist(key string, pl Payload) (*Upstream, bool) {
 // Open requests the upstream URL with the payload's headers. Errors (including HTTP >= 400 and HTML responses) let callers
 // fall back to another stream. A playlist fetched a moment ago for somebody else is handed out again (see above).
 func (p *Proxy) Open(ctx context.Context, in *http.Request, pl Payload) (*Upstream, error) {
+	plain := in != nil && (in.Method == http.MethodGet || in.Method == http.MethodHead) && in.Header.Get("Range") == ""
+	if plain { // a live playlist the proxy follows: players get it a head start behind the server's live point
+		if up, ok := p.headStartServe(pl); ok {
+			return up, nil
+		}
+	}
+	up, err := p.openCachedPlaylist(ctx, in, pl)
+	if err == nil && plain && up.Kind == "hls" {
+		if hs, ok := p.headStartBegin(ctx, pl, up); ok {
+			up.Close()
+			return hs, nil
+		}
+	}
+	return up, err
+}
+
+func (p *Proxy) openCachedPlaylist(ctx context.Context, in *http.Request, pl Payload) (*Upstream, error) {
 	setting := p.set.Seconds("playlist_cache_seconds")
 	if setting <= 0 || in == nil || (in.Method != http.MethodGet && in.Method != http.MethodHead) || in.Header.Get("Range") != "" {
 		return p.openFresh(ctx, in, pl)

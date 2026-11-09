@@ -44,6 +44,7 @@ type Proxy struct {
 	shares shareSet  // live streams shared between viewers (share.go)
 	pl     plCache   // playlists shared for a moment (plcache.go)
 	dash   dashIndex // which DASH representations viewers use (dash.go)
+	hs     hsSet     // live HLS playlists followed for the head start (headstart.go)
 
 	upstreamOK, upstreamErr atomic.Uint64 // requests to streams that worked / failed (not counting players that left)
 	retries, holdovers      atomic.Uint64 // repeated upstream requests; playlists served from the last good copy
@@ -203,6 +204,8 @@ type Stats struct {
 	SharedViewers              int
 	SharedJoins                uint64 // viewers that joined a stream somebody else had opened
 	PlaylistHits               uint64 // playlists handed out from a copy instead of asking the server
+	HeadStartStreams           int    // live HLS playlists the proxy follows now
+	HeadStartPlaylists         uint64 // playlists handed to players from the head start
 }
 
 func (p *Proxy) Stats() Stats {
@@ -211,7 +214,8 @@ func (p *Proxy) Stats() Stats {
 		CacheHits: p.cache.hits.Load(), CacheMisses: p.cache.misses.Load(), UpstreamOK: p.upstreamOK.Load(), UpstreamErrors: p.upstreamErr.Load(),
 		CacheHitBytes: p.cache.hitBytes.Load() + p.shares.bytes.Load(), CacheStores: p.cache.stores.Load(), CacheRejected: p.cache.rejected.Load(),
 		Prefetched: p.prefetched.Load(), Coalesced: p.coalesced.Load(), Retries: p.retries.Load(), Holdovers: p.holdovers.Load(),
-		SharedStreams: int(p.shares.streams.Load()), SharedViewers: int(p.shares.viewers.Load()), SharedJoins: p.shares.joins.Load(), PlaylistHits: p.pl.hits.Load()}
+		SharedStreams: int(p.shares.streams.Load()), SharedViewers: int(p.shares.viewers.Load()), SharedJoins: p.shares.joins.Load(), PlaylistHits: p.pl.hits.Load(),
+		HeadStartStreams: int(p.hs.streams.Load()), HeadStartPlaylists: p.hs.playlists.Load()}
 }
 
 // openFresh requests the upstream URL with the payload's headers, retrying temporary failures (see Open for the cached way).
@@ -555,6 +559,12 @@ func (p *Proxy) ServeSigned(w http.ResponseWriter, r *http.Request, prefix, pub 
 		w = &CountWriter{ResponseWriter: w, OnWrite: add}
 	}
 
+	if r.Method == http.MethodGet && r.Header.Get("Range") != "" && r.Header.Get("If-Range") == "" {
+		// a range of a segment we hold needs no request to the server (a segment never changes, and the server may have dropped it)
+		if c, ok := p.cache.peek(cacheKey(pl)); ok && p.serveRange(w, r.Header.Get("Range"), c) {
+			return
+		}
+	}
 	if r.Method == http.MethodGet && r.Header.Get("Range") == "" {
 		if c, ok := p.cache.get(cacheKey(pl)); ok {
 			setCORS(w)
@@ -611,4 +621,71 @@ func (p *Proxy) ServeSigned(w http.ResponseWriter, r *http.Request, prefix, pub 
 		p.cache.misses.Add(1) // a segment (or file) the cache could not give: fetched from the server
 	}
 	p.Respond(w, r, up, pub)
+}
+
+// parseRange reads one byte range ("bytes=a-b", "bytes=a-", "bytes=-n") of an entity of size bytes: status 206 with the first
+// and last byte, 416 when it cannot be satisfied, 0 when it is not one we answer (several ranges, something else).
+func parseRange(h string, size int) (start, end, status int) {
+	spec, ok := strings.CutPrefix(strings.TrimSpace(h), "bytes=")
+	if !ok || strings.Contains(spec, ",") {
+		return 0, 0, 0
+	}
+	a, b, ok := strings.Cut(strings.TrimSpace(spec), "-")
+	if !ok {
+		return 0, 0, 0
+	}
+	if a == "" { // the last n bytes
+		n, err := strconv.Atoi(b)
+		if err != nil || n < 0 {
+			return 0, 0, 0
+		}
+		if n == 0 {
+			return 0, 0, 416
+		}
+		if n > size {
+			n = size
+		}
+		return size - n, size - 1, 206
+	}
+	s, err := strconv.Atoi(a)
+	if err != nil || s < 0 {
+		return 0, 0, 0
+	}
+	if s >= size {
+		return 0, 0, 416
+	}
+	e := size - 1
+	if b != "" {
+		e2, err := strconv.Atoi(b)
+		if err != nil || e2 < s {
+			return 0, 0, 0
+		}
+		if e2 < e {
+			e = e2
+		}
+	}
+	return s, e, 206
+}
+
+// serveRange answers a range request from a cached copy; false when it is not a range we answer (the server gets it then).
+func (p *Proxy) serveRange(w http.ResponseWriter, h string, c cached) bool {
+	start, end, st := parseRange(h, len(c.data))
+	switch st {
+	case 206:
+		setCORS(w)
+		w.Header().Set("Content-Type", c.ct)
+		w.Header().Set("Accept-Ranges", "bytes")
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(c.data)))
+		w.Header().Set("Content-Length", strconv.Itoa(end-start+1))
+		w.WriteHeader(http.StatusPartialContent)
+		w.Write(c.data[start : end+1])
+		p.cache.noteHit(end - start + 1)
+		return true
+	case 416:
+		setCORS(w)
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", len(c.data)))
+		http.Error(w, "range not satisfiable", http.StatusRequestedRangeNotSatisfiable)
+		return true
+	}
+	return false
 }

@@ -37,6 +37,7 @@ const tiles = computed(() => {
     { label: 'Joined a shared stream', scope: 'start', value: (c.shared_joins || 0).toLocaleString(), title: 'Viewers that did not need a connection of their own because somebody was already watching the same live stream' },
     { label: 'Prefetched', scope: 'start', value: c.prefetched.toLocaleString(), title: 'Segments fetched ahead of the player (HLS, and live DASH that lists its segments in a timeline)' },
     { label: 'Playlists shared', scope: 'start', value: (c.playlist_hits || 0).toLocaleString(), title: 'Playlists handed out from a copy fetched a moment before, instead of another request to the stream server (Settings > Proxy)' },
+    { label: 'Head start', scope: 'now', value: (c.head_start_streams || 0).toLocaleString(), sub: (c.head_start_streams === 1 ? 'live playlist' : 'live playlists'), title: 'Live HLS playlists the proxy follows to serve players a few seconds behind the stream server, from segments it already holds (Settings > Proxy)' },
     { label: 'Shared fetches', scope: 'start', value: c.coalesced.toLocaleString(), title: 'Requests that waited for a fetch already running instead of asking the server again' },
     { label: 'Retries', scope: 'start', value: c.retries.toLocaleString(), title: 'Stream server requests repeated after a temporary failure' },
     { label: 'Playlist hold-overs', scope: 'start', value: c.holdovers.toLocaleString(), title: 'Playlists served from the last good copy because the server was down' },

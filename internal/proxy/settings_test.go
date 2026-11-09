@@ -17,7 +17,10 @@ func testSettings(t *testing.T) *settings.Settings {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	return settings.New(st)
+	set := settings.New(st)
+	// the tests of other features run without the head start (it has its own tests): it holds live HLS playlists back
+	set.Apply(map[string]any{"hls_head_start_seconds": 0.0})
+	return set
 }
 
 func TestConnectionLimitFollowsTheSetting(t *testing.T) {
