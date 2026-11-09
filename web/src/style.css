@@ -75,3 +75,6 @@ td { vertical-align:middle; }
 .savebar .grow { flex:1; }
 .rise-enter-active, .rise-leave-active { transition:opacity .15s, transform .15s; }
 .rise-enter-from, .rise-leave-to { opacity:0; transform:translateY(8px); }
+
+/* round icon above the empty-state / welcome text (Setup and Profiles) */
+.hero { display:inline-flex; align-items:center; justify-content:center; width:96px; height:96px; border-radius:24px; color:var(--accent); background:color-mix(in srgb, var(--accent) 12%, transparent); margin-bottom:16px; }

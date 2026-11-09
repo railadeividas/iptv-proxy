@@ -80,7 +80,6 @@ async function create() {
 
 <style scoped>
 .welcome { max-width:680px; margin:6vh auto 0; text-align:center; padding:0 4px; }
-.hero { display:inline-flex; align-items:center; justify-content:center; width:96px; height:96px; border-radius:24px; color:var(--accent); background:color-mix(in srgb, var(--accent) 12%, transparent); margin-bottom:16px; }
 .welcome h1 { font-size:26px; margin:0 0 8px; }
 .lead { margin:0 auto 24px; max-width:520px; color:var(--muted); font-size:15px; line-height:1.5; }
 .create { display:flex; gap:10px; max-width:460px; margin:0 auto; }
