@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -33,7 +34,7 @@ func TestStats(t *testing.T) {
 		t.Fatal("cached")
 	}
 	s := px.Stats()
-	if s.CacheHits != 1 || s.CacheMisses != 1 || s.CacheEntries != 1 || s.CacheBytes != 10 || s.CacheHitBytes != 10 || s.CacheStores != 1 || s.CacheRejected != 0 {
+	if s.CacheHits != 1 || s.CacheMisses != 0 || s.CacheEntries != 1 || s.CacheBytes != 10 || s.CacheHitBytes != 10 || s.CacheStores != 1 || s.CacheRejected != 0 {
 		t.Fatalf("cache: %+v", s)
 	}
 
@@ -54,5 +55,35 @@ func TestStats(t *testing.T) {
 	set.Apply(map[string]any{"max_connections": 5.0})
 	if px.Stats().Limit != 5 {
 		t.Fatal("the limit follows the setting")
+	}
+}
+
+// The hit rate is about segments: a playlist is never a miss, and a segment fetched from the server is one exactly once.
+func TestCacheMissesCountSegmentsOnly(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".m3u8") {
+			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+			w.Write([]byte("#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4,\nseg1.ts\n"))
+			return
+		}
+		w.Header().Set("Content-Type", "video/mp2t")
+		w.Write([]byte("segment-data"))
+	}))
+	defer up.Close()
+	set := testSettings(t)
+	px := New(NewSigner([]byte("0123456789abcdef0123456789abcdef")), set)
+	set.Apply(map[string]any{"segment_prefetch_count": 0.0, "playlist_cache_seconds": 0.0}) // only what the players ask for
+
+	for i := 0; i < 3; i++ {
+		signedGet(t, px, Payload{U: up.URL + "/live.m3u8"})
+	}
+	if s := px.Stats(); s.CacheMisses != 0 || s.CacheHits != 0 {
+		t.Fatalf("playlists are not cache lookups: %+v", s)
+	}
+	signedGet(t, px, Payload{U: up.URL + "/seg1.ts"}) // fetched from the server, and kept
+	signedGet(t, px, Payload{U: up.URL + "/seg1.ts"}) // served from the cache
+	signedGet(t, px, Payload{U: up.URL + "/seg1.ts"})
+	if s := px.Stats(); s.CacheMisses != 1 || s.CacheHits != 2 {
+		t.Fatalf("one miss, two hits: %+v", s)
 	}
 }

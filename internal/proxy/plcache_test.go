@@ -169,3 +169,83 @@ func TestPlaylistCacheKeepsTheBodyOfOneViewerFromAnother(t *testing.T) {
 	}
 	_ = io.Discard
 }
+
+// ffmpeg based players (Jellyfin, Plex, Emby) ask "Range: bytes=0-" for every playlist and segment. That is a plain request: the
+// caches, the shared playlists and the prefetched segments must work for them, and a real range must keep working as before.
+func TestWholeFileRangeIsAPlainRequest(t *testing.T) {
+	var playlists, segments atomic.Int32
+	var ranges sync.Map
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if v := r.Header.Get("Range"); v != "" {
+			ranges.Store(r.URL.Path, v)
+		}
+		if strings.HasSuffix(r.URL.Path, ".m3u8") {
+			playlists.Add(1)
+			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+			w.Write([]byte("#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:5,\nseg1.ts\n#EXTINF:5,\nseg2.ts\n"))
+			return
+		}
+		segments.Add(1)
+		w.Header().Set("Content-Type", "video/mp2t")
+		w.Write([]byte(strings.Repeat("v", 5000)))
+	}))
+	t.Cleanup(up.Close)
+	px := newSharingProxy(t, map[string]any{"segment_prefetch_count": 2.0})
+	ffmpegGet := func(path string) (int, string) {
+		t.Helper()
+		pl := Payload{U: up.URL + path, E: time.Now().Add(time.Hour).Unix()}
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/x/"+px.signer.Encode(pl)+"/f", nil)
+		req.Header.Set("Range", "bytes=0-")
+		px.ServeSigned(rec, req, "/x/", "http://proxy")
+		b, _ := io.ReadAll(rec.Result().Body)
+		return rec.Code, string(b)
+	}
+
+	// two players read the same playlist: one request to the server
+	for i := 0; i < 2; i++ {
+		if code, _ := ffmpegGet("/live/index.m3u8"); code != 200 {
+			t.Fatalf("playlist: %d", code)
+		}
+	}
+	if playlists.Load() != 1 {
+		t.Fatalf("the shared playlist works for \"bytes=0-\": %d requests", playlists.Load())
+	}
+	// the segments were fetched ahead and the players are served from the cache
+	waitFor(t, "segments fetched ahead", func() bool {
+		return px.cache.has(cacheKey(Payload{U: up.URL + "/live/seg1.ts"})) && px.cache.has(cacheKey(Payload{U: up.URL + "/live/seg2.ts"}))
+	})
+	before := segments.Load()
+	for i := 0; i < 3; i++ {
+		if code, body := ffmpegGet("/live/seg1.ts"); code != 200 || len(body) != 5000 {
+			t.Fatalf("segment: %d %d bytes", code, len(body))
+		}
+	}
+	if segments.Load() != before || px.Stats().CacheHits < 3 {
+		t.Fatalf("segments for \"bytes=0-\" come from the cache: server saw %d more, %+v", segments.Load()-before, px.Stats())
+	}
+	if _, asked := ranges.Load("/live/seg1.ts"); asked {
+		t.Fatal("the server is not asked for a range when the whole thing was wanted")
+	}
+
+	// a real range is still the server's business
+	pl := Payload{U: up.URL + "/live/other.ts", E: time.Now().Add(time.Hour).Unix()}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/x/"+px.signer.Encode(pl)+"/f", nil)
+	req.Header.Set("Range", "bytes=100-")
+	px.ServeSigned(rec, req, "/x/", "http://proxy")
+	if v, _ := ranges.Load("/live/other.ts"); v != "bytes=100-" {
+		t.Fatalf("a range from the middle goes to the server unchanged: %v", v)
+	}
+	// and the request itself is not touched: only a copy loses the header
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("Range", "bytes=0-")
+	r.Header.Set("If-Range", "x")
+	if c := WholeFile(r); c.Header.Get("Range") != "" || c.Header.Get("If-Range") != "" || r.Header.Get("Range") != "bytes=0-" {
+		t.Fatal("WholeFile changes a copy")
+	}
+	r.Header.Set("Range", "bytes=0-99")
+	if WholeFile(r) != r {
+		t.Fatal("a closed range is a real range")
+	}
+}

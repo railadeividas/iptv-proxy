@@ -256,7 +256,7 @@ func TestAudioFixHandlesRangeFromStart(t *testing.T) {
 	}))
 	defer up.Close()
 	px := New(NewSigner([]byte("0123456789abcdef0123456789abcdef")), testSettings(t))
-	for _, c := range []struct {
+	for i, c := range []struct {
 		name, rng, cr string
 		code          int
 		want          []int
@@ -267,7 +267,7 @@ func TestAudioFixHandlesRangeFromStart(t *testing.T) {
 		{"range from the middle", "bytes=188-", "bytes 188-1000/1001", 206, []int{6, 6}}, // not ours to touch
 	} {
 		status, contentRange = c.code, c.cr
-		pl := Payload{U: up.URL + "/s.ts", E: time.Now().Add(time.Hour).Unix()}
+		pl := Payload{U: up.URL + "/s" + string(rune('a'+i)) + ".ts", E: time.Now().Add(time.Hour).Unix()} // one URL per case: a whole file is cached now
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest("GET", "/x/"+px.signer.Encode(pl)+"/f", nil)
 		req.Header.Set("Range", c.rng)

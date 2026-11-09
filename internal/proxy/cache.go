@@ -49,12 +49,14 @@ func newSegCache(set *settings.Settings) *segCache {
 
 func cacheKey(pl Payload) string { return pl.U + "\x00" + pl.R + "\x00" + pl.A }
 
+// get returns a fresh copy and counts the hit. A miss is not counted here: most lookups are for things that were never going
+// to be in the cache (playlists), so the caller counts a miss only for a response that really was a segment fetched from the
+// server (see ServeSigned).
 func (c *segCache) get(k string) (cached, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	v, ok := c.m[k]
 	if !ok || time.Now().After(v.expires) {
-		c.misses.Add(1)
 		return cached{}, false
 	}
 	c.hits.Add(1)

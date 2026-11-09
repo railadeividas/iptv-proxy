@@ -491,6 +491,20 @@ func (p *Proxy) Acquire() (release func(), ok bool) {
 	}
 }
 
+// WholeFile turns a request for "bytes=0-" into a plain one. That range is the whole thing, and ffmpeg based players (Jellyfin,
+// Plex, Emby) send it with every playlist and every segment. Answering it as a plain request (a 200 with everything, which a
+// server may always do) lets the caches, the shared playlists and the shared live streams serve it; a real range
+// (anything else) is still passed to the server as it is.
+func WholeFile(r *http.Request) *http.Request {
+	if r.Header.Get("Range") != "bytes=0-" {
+		return r
+	}
+	c := r.Clone(r.Context())
+	c.Header.Del("Range")
+	c.Header.Del("If-Range")
+	return c
+}
+
 // ServeSigned handles /x/{token}/{name} and /xd/{token}/{rest...}.
 // pub is the public base URL; prefix is "/x/" or "/xd/".
 func (p *Proxy) ServeSigned(w http.ResponseWriter, r *http.Request, prefix, pub string) {
@@ -503,6 +517,7 @@ func (p *Proxy) ServeSigned(w http.ResponseWriter, r *http.Request, prefix, pub 
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	r = WholeFile(r)
 	rest := strings.TrimPrefix(r.URL.Path, prefix)
 	tok, tail, _ := strings.Cut(rest, "/")
 	pl, err := p.signer.Decode(tok)
@@ -591,6 +606,9 @@ func (p *Proxy) ServeSigned(w http.ResponseWriter, r *http.Request, prefix, pub 
 		setCORS(w)
 		http.Error(w, err.Error(), code)
 		return
+	}
+	if r.Method == http.MethodGet && r.Header.Get("Range") == "" && up.Kind == "" {
+		p.cache.misses.Add(1) // a segment (or file) the cache could not give: fetched from the server
 	}
 	p.Respond(w, r, up, pub)
 }

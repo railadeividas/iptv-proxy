@@ -126,6 +126,7 @@ func (s *Server) channel(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	r = proxy.WholeFile(r) // ffmpeg asks "bytes=0-" for everything: that is a plain request
 	p, ok := s.profileFromToken(w, r)
 	if !ok {
 		return
