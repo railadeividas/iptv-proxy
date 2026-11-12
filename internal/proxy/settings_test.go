@@ -98,3 +98,53 @@ func TestManifestLimitAndDefaultUserAgentAreLive(t *testing.T) {
 		t.Fatalf("edited default UA: %q", gotUA)
 	}
 }
+
+// New links are encrypted by default; switching the setting changes the next link without a restart, and both kinds open.
+func TestLinkEncryptionFollowsTheSetting(t *testing.T) {
+	set := testSettings(t)
+	px := New(NewSigner([]byte("0123456789abcdef0123456789abcdef")), set)
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".ts") {
+			w.Header().Set("Content-Type", "video/mp2t")
+			w.Write([]byte("seg"))
+			return
+		}
+		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+		w.Write([]byte("#EXTM3U\n#EXT-X-TARGETDURATION:5\n#EXTINF:5,\nsecretseg.ts\n"))
+	}))
+	defer up.Close()
+	playlist := func() string {
+		tok := px.signer.Seal(Payload{U: up.URL + "/live.m3u8"})
+		rec := httptest.NewRecorder()
+		px.ServeSigned(rec, httptest.NewRequest("GET", "/x/"+tok+"/live.m3u8", nil), "/x/", "http://p")
+		for _, l := range strings.Split(rec.Body.String(), "\n") {
+			if strings.HasPrefix(l, "http://p/x/") {
+				return strings.Split(strings.TrimPrefix(l, "http://p/x/"), "/")[0]
+			}
+		}
+		t.Fatalf("no link in %q", rec.Body.String())
+		return ""
+	}
+	on := playlist()
+	if strings.Contains(on, ".") {
+		t.Fatalf("default must be an encrypted link: %s", on)
+	}
+	if pl, err := px.signer.Open(on); err != nil || !strings.HasSuffix(pl.U, "/secretseg.ts") {
+		t.Fatalf("open: %v %+v", err, pl)
+	}
+	set.Apply(map[string]any{"link_encrypt": "off"})
+	off := playlist()
+	if !strings.Contains(off, ".") {
+		t.Fatalf("off must give a signed link: %s", off)
+	}
+	if pl, err := px.signer.Decode(off); err != nil || !strings.HasSuffix(pl.U, "/secretseg.ts") {
+		t.Fatalf("decode: %v %+v", err, pl)
+	}
+	for _, tok := range []string{on, off} { // links of both kinds are served whatever the setting is
+		rec := httptest.NewRecorder()
+		px.ServeSigned(rec, httptest.NewRequest("GET", "/x/"+tok+"/s.ts", nil), "/x/", "http://p")
+		if rec.Code != 200 || rec.Body.String() != "seg" {
+			t.Fatalf("serve %s: %d %q", tok, rec.Code, rec.Body.String())
+		}
+	}
+}

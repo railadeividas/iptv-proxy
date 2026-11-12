@@ -120,3 +120,20 @@ func (s *Signer) Open(tok string) (Payload, error) {
 	}
 	return p, nil
 }
+
+// Link opens a proxy link of either kind: an encrypted one (Seal) or a readable signed one (Encode, which always
+// contains a dot). Which kind new links get is the setting link_encrypt; both stay valid when it changes.
+func (s *Signer) Link(tok string) (Payload, error) {
+	if strings.Contains(tok, ".") {
+		return s.Decode(tok)
+	}
+	return s.Open(tok)
+}
+
+// Make returns a proxy link for p, encrypted when seal is set and only signed otherwise.
+func (s *Signer) Make(p Payload, seal bool) string {
+	if seal {
+		return s.Seal(p)
+	}
+	return s.Encode(p)
+}

@@ -207,7 +207,7 @@ go vet ./... && go test ./...
   (`Store.DropFromProfiles`); channels that stay keep their position and settings. A retitled channel keeps its identity by
   stream URL.
 - Sync and refresh jobs keep the last good data when they fail.
-- Proxy links are encrypted and authenticated (`Signer.Seal`/`Open`, AES-GCM; the payload with the upstream URL, Referer and User-Agent is not readable; `Encode`/`Decode` stay for the session cookie only); never add an endpoint that fetches arbitrary URLs.
+- Proxy links are authenticated and, by default, encrypted (setting `link_encrypt`, on: `Signer.Seal`, AES-GCM, the payload with the upstream URL, Referer and User-Agent is not readable; off: `Encode`, readable but signed). New links are made with `Signer.Make`, every link is opened with `Signer.Link`, which accepts both kinds, so the setting never breaks a running stream; `Encode`/`Decode` are also the session cookie. Never add an endpoint that fetches arbitrary URLs.
 - **Playlist cache** (`plcache.go`): `Proxy.Open` hands a manifest fetched a moment ago to the next viewer (one fetch for concurrent ones). The copy is
   the bytes exactly as the server sent them and every viewer still gets it rewritten, so profile and channel ids in the links stay theirs;
   it never lives longer than half of the playlist's own update interval (`playlistTTL`). A cached `Upstream` has no `resp`, so Respond neither

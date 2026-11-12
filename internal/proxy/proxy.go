@@ -367,7 +367,7 @@ func (p *Proxy) Respond(w http.ResponseWriter, in *http.Request, up *Upstream, p
 	setCORS(w)
 	h := w.Header()
 	if up.Kind != "" {
-		rw := &rewriter{signer: p.signer, pub: pub, base: up.URL, ref: up.Payload.R, ua: up.Payload.A, exp: time.Now().Add(p.set.Hours("link_expiry_hours")).Unix(), prof: up.Payload.P, ck: up.Payload.C}
+		rw := &rewriter{signer: p.signer, seal: p.set.String("link_encrypt") == "on", pub: pub, base: up.URL, ref: up.Payload.R, ua: up.Payload.A, exp: time.Now().Add(p.set.Hours("link_expiry_hours")).Unix(), prof: up.Payload.P, ck: up.Payload.C}
 		if in.Method != http.MethodHead && up.resp != nil { // a held-over copy is not fresh: it must not renew itself
 			if p.set.Int("playlist_holdover_seconds") > 0 {
 				p.cache.hold(cacheKey(up.Payload), heldManifest{kind: up.Kind, manifest: up.Manifest, url: up.URL, at: time.Now()})
@@ -524,7 +524,7 @@ func (p *Proxy) ServeSigned(w http.ResponseWriter, r *http.Request, prefix, pub 
 	r = WholeFile(r)
 	rest := strings.TrimPrefix(r.URL.Path, prefix)
 	tok, tail, _ := strings.Cut(rest, "/")
-	pl, err := p.signer.Open(tok)
+	pl, err := p.signer.Link(tok)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return

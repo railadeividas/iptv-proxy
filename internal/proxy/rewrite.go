@@ -11,6 +11,7 @@ import (
 // rewriter turns upstream manifest references into signed proxy URLs.
 type rewriter struct {
 	signer *Signer
+	seal   bool     // new links are encrypted (setting link_encrypt)
 	pub    string   // public base URL of this proxy, no trailing slash
 	base   *url.URL // URL of the manifest being rewritten
 	ref    string   // Referer to propagate
@@ -42,7 +43,7 @@ func cosmeticName(u *url.URL) string {
 
 func (rw *rewriter) fileURL(u *url.URL) string {
 	u.Fragment = ""
-	tok := rw.signer.Seal(Payload{U: u.String(), R: rw.ref, A: rw.ua, E: rw.exp, P: rw.prof, C: rw.ck})
+	tok := rw.signer.Make(Payload{U: u.String(), R: rw.ref, A: rw.ua, E: rw.exp, P: rw.prof, C: rw.ck}, rw.seal)
 	return rw.pub + "/x/" + tok + "/" + cosmeticName(u)
 }
 
@@ -61,7 +62,7 @@ func dirString(u *url.URL) string {
 }
 
 func (rw *rewriter) dirURL(u *url.URL) string {
-	tok := rw.signer.Seal(Payload{U: dirString(u), R: rw.ref, A: rw.ua, E: rw.exp, D: true, P: rw.prof, C: rw.ck})
+	tok := rw.signer.Make(Payload{U: dirString(u), R: rw.ref, A: rw.ua, E: rw.exp, D: true, P: rw.prof, C: rw.ck}, rw.seal)
 	return rw.pub + "/xd/" + tok + "/"
 }
 

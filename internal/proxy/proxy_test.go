@@ -57,13 +57,19 @@ func TestSealHidesUpstream(t *testing.T) {
 		t.Fatal("token opened with a different key")
 	}
 	if _, err := s.Open(s.Encode(in)); err == nil {
-		t.Fatal("old readable token accepted")
+		t.Fatal("a readable token is not an encrypted one")
+	}
+	if p, err := s.Link(s.Encode(in)); err != nil || p != in {
+		t.Fatalf("Link must still open readable signed links: %v", err)
+	}
+	if p, err := s.Link(tok); err != nil || p != in {
+		t.Fatalf("Link must open encrypted links: %v", err)
 	}
 }
 
 func newRW(base string) *rewriter {
 	u, _ := url.Parse(base)
-	return &rewriter{signer: NewSigner([]byte("0123456789abcdef0123456789abcdef")), pub: "http://proxy", base: u, ref: "http://ref/", ua: "UA", exp: time.Now().Add(time.Hour).Unix()}
+	return &rewriter{signer: NewSigner([]byte("0123456789abcdef0123456789abcdef")), pub: "http://proxy", base: u, seal: true, ref: "http://ref/", ua: "UA", exp: time.Now().Add(time.Hour).Unix()}
 }
 
 func TestHLSRewrite(t *testing.T) {
