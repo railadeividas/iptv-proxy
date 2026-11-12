@@ -269,7 +269,7 @@ func TestAudioFixHandlesRangeFromStart(t *testing.T) {
 		status, contentRange = c.code, c.cr
 		pl := Payload{U: up.URL + "/s" + string(rune('a'+i)) + ".ts", E: time.Now().Add(time.Hour).Unix()} // one URL per case: a whole file is cached now
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest("GET", "/x/"+px.signer.Encode(pl)+"/f", nil)
+		req := httptest.NewRequest("GET", "/x/"+px.signer.Seal(pl)+"/f", nil)
 		req.Header.Set("Range", c.rng)
 		px.ServeSigned(rec, req, "/x/", "http://proxy")
 		body, _ := io.ReadAll(rec.Result().Body)

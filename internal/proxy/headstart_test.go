@@ -148,7 +148,7 @@ func playlistOf(t *testing.T, px *Proxy, l *liveHLS, viewer int64) (int, string)
 func segSeq(t *testing.T, px *Proxy, link string) int64 {
 	t.Helper()
 	tok := strings.Split(strings.TrimPrefix(link, "/x/"), "/")[0]
-	pl, err := px.signer.Decode(tok)
+	pl, err := px.signer.Open(tok)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +210,7 @@ func TestHeadStartLinksBelongToTheViewer(t *testing.T) {
 		want int64
 	}{{a, 11}, {b, 12}} {
 		l := linkRe.FindStringSubmatch(c.body)
-		pl, err := px.signer.Decode(strings.Split(strings.TrimPrefix(l[1], "/x/"), "/")[0])
+		pl, err := px.signer.Open(strings.Split(strings.TrimPrefix(l[1], "/x/"), "/")[0])
 		if err != nil || pl.P != c.want {
 			t.Fatalf("a shared head start still rewrites for each viewer: %+v %v", pl, err)
 		}
@@ -488,7 +488,7 @@ func TestRangeFromACachedSegment(t *testing.T) {
 	}))
 	t.Cleanup(up.Close)
 	pl := Payload{U: up.URL + "/s.ts", E: time.Now().Add(time.Hour).Unix()}
-	path := "/x/" + px.signer.Encode(pl) + "/s.ts"
+	path := "/x/" + px.signer.Seal(pl) + "/s.ts"
 	px.cache.put(cacheKey(pl), cached{status: 200, ct: "video/mp2t", data: segBytes(5)})
 	do := func(rng string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()

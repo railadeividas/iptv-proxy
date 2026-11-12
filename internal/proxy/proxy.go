@@ -524,7 +524,7 @@ func (p *Proxy) ServeSigned(w http.ResponseWriter, r *http.Request, prefix, pub 
 	r = WholeFile(r)
 	rest := strings.TrimPrefix(r.URL.Path, prefix)
 	tok, tail, _ := strings.Cut(rest, "/")
-	pl, err := p.signer.Decode(tok)
+	pl, err := p.signer.Open(tok)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return

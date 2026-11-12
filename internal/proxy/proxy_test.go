@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,6 +25,39 @@ func TestSignRoundTrip(t *testing.T) {
 	}
 	if _, err := s.Decode(s.Encode(Payload{U: "x", E: 1})); err == nil {
 		t.Fatal("expired token accepted")
+	}
+}
+
+func TestSealHidesUpstream(t *testing.T) {
+	s := NewSigner([]byte("0123456789abcdef0123456789abcdef"))
+	in := Payload{U: "https://cdn.example.com/secret/path.m3u8", R: "https://ref.example/", A: "UA-secret", E: time.Now().Add(time.Minute).Unix(), P: 2, C: "ch@SD"}
+	tok := s.Seal(in)
+	for _, leak := range []string{"example", "secret", "UA-"} {
+		if strings.Contains(tok, leak) {
+			t.Fatalf("token leaks %q: %s", leak, tok)
+		}
+		if raw, err := base64.RawURLEncoding.DecodeString(strings.Split(tok, ".")[0]); err == nil && strings.Contains(string(raw), leak) {
+			t.Fatalf("decoded token leaks %q", leak)
+		}
+	}
+	out, err := s.Open(tok)
+	if err != nil || out != in {
+		t.Fatalf("open: %v %+v", err, out)
+	}
+	if tok == s.Seal(in) {
+		t.Fatal("tokens must differ (random nonce)")
+	}
+	if _, err := s.Open(tok[:len(tok)-2] + "AA"); err == nil {
+		t.Fatal("tampered token accepted")
+	}
+	if _, err := s.Open(s.Seal(Payload{U: "x", E: 1})); err == nil {
+		t.Fatal("expired token accepted")
+	}
+	if _, err := NewSigner([]byte("another-key-another-key-another!")).Open(tok); err == nil {
+		t.Fatal("token opened with a different key")
+	}
+	if _, err := s.Open(s.Encode(in)); err == nil {
+		t.Fatal("old readable token accepted")
 	}
 }
 
@@ -51,7 +85,7 @@ func TestHLSRewrite(t *testing.T) {
 	i := strings.Index(out, "seg1")
 	line := out[strings.LastIndex(out[:i], "\n")+1:]
 	tok := strings.Split(strings.TrimPrefix(strings.Split(line, "\n")[0], "http://proxy/x/"), "/")[0]
-	p, err := rw.signer.Decode(tok)
+	p, err := rw.signer.Open(tok)
 	if err != nil || p.U != "https://cdn.example.com/live/seg1.ts?x=1" || p.R != "http://ref/" || p.A != "UA" {
 		t.Fatalf("payload: %v %+v", err, p)
 	}

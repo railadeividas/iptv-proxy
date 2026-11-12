@@ -42,7 +42,7 @@ func cosmeticName(u *url.URL) string {
 
 func (rw *rewriter) fileURL(u *url.URL) string {
 	u.Fragment = ""
-	tok := rw.signer.Encode(Payload{U: u.String(), R: rw.ref, A: rw.ua, E: rw.exp, P: rw.prof, C: rw.ck})
+	tok := rw.signer.Seal(Payload{U: u.String(), R: rw.ref, A: rw.ua, E: rw.exp, P: rw.prof, C: rw.ck})
 	return rw.pub + "/x/" + tok + "/" + cosmeticName(u)
 }
 
@@ -61,7 +61,7 @@ func dirString(u *url.URL) string {
 }
 
 func (rw *rewriter) dirURL(u *url.URL) string {
-	tok := rw.signer.Encode(Payload{U: dirString(u), R: rw.ref, A: rw.ua, E: rw.exp, D: true, P: rw.prof, C: rw.ck})
+	tok := rw.signer.Seal(Payload{U: dirString(u), R: rw.ref, A: rw.ua, E: rw.exp, D: true, P: rw.prof, C: rw.ck})
 	return rw.pub + "/xd/" + tok + "/"
 }
 

@@ -38,7 +38,7 @@ func segmentOwner(t *testing.T, px *Proxy, body string) int64 {
 	t.Helper()
 	for _, l := range strings.Split(body, "\n") {
 		if strings.HasPrefix(l, "http://proxy/x/") {
-			pl, err := px.signer.Decode(strings.Split(strings.TrimPrefix(l, "http://proxy/x/"), "/")[0])
+			pl, err := px.signer.Open(strings.Split(strings.TrimPrefix(l, "http://proxy/x/"), "/")[0])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -195,7 +195,7 @@ func TestWholeFileRangeIsAPlainRequest(t *testing.T) {
 		t.Helper()
 		pl := Payload{U: up.URL + path, E: time.Now().Add(time.Hour).Unix()}
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest("GET", "/x/"+px.signer.Encode(pl)+"/f", nil)
+		req := httptest.NewRequest("GET", "/x/"+px.signer.Seal(pl)+"/f", nil)
 		req.Header.Set("Range", "bytes=0-")
 		px.ServeSigned(rec, req, "/x/", "http://proxy")
 		b, _ := io.ReadAll(rec.Result().Body)
@@ -231,7 +231,7 @@ func TestWholeFileRangeIsAPlainRequest(t *testing.T) {
 	// a real range is still the server's business
 	pl := Payload{U: up.URL + "/live/other.ts", E: time.Now().Add(time.Hour).Unix()}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/x/"+px.signer.Encode(pl)+"/f", nil)
+	req := httptest.NewRequest("GET", "/x/"+px.signer.Seal(pl)+"/f", nil)
 	req.Header.Set("Range", "bytes=100-")
 	px.ServeSigned(rec, req, "/x/", "http://proxy")
 	if v, _ := ranges.Load("/live/other.ts"); v != "bytes=100-" {

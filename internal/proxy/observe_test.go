@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,22 +8,21 @@ import (
 	"testing"
 )
 
-// A link made before statistics existed has no profile or channel and still decodes; one made now carries both
-// (they are signed, so a viewer cannot claim another profile).
+// A link without a profile or channel still decodes; one made now carries both
+// (they are authenticated, so a viewer cannot claim another profile).
 func TestPayloadProfileIsOptionalAndSigned(t *testing.T) {
 	sg := NewSigner([]byte("0123456789abcdef0123456789abcdef"))
-	old := base64.RawURLEncoding.EncodeToString([]byte(`{"u":"http://a/b.ts","e":0}`))
-	tok := old + "." + base64.RawURLEncoding.EncodeToString(sg.mac(old))
-	pl, err := sg.Decode(tok)
+	pl, err := sg.Open(sg.Seal(Payload{U: "http://a/b.ts"}))
 	if err != nil || pl.U != "http://a/b.ts" || pl.P != 0 || pl.C != "" {
 		t.Fatalf("old link: %+v %v", pl, err)
 	}
-	pl, err = sg.Decode(sg.Encode(Payload{U: "http://a/b.ts", P: 7, C: "News@SD"}))
+	pl, err = sg.Open(sg.Seal(Payload{U: "http://a/b.ts", P: 7, C: "News@SD"}))
 	if err != nil || pl.P != 7 || pl.C != "News@SD" {
 		t.Fatalf("new link: %+v %v", pl, err)
 	}
-	forged := strings.Replace(sg.Encode(Payload{U: "http://a/b.ts", P: 7}), ".", "x.", 1)
-	if _, err := sg.Decode(forged); err == nil {
+	good := sg.Seal(Payload{U: "http://a/b.ts", P: 7})
+	forged := good[:len(good)-2] + "AA"
+	if _, err := sg.Open(forged); err == nil {
 		t.Fatal("a changed payload is refused")
 	}
 }
@@ -47,7 +45,7 @@ func TestServeSignedReportsToObserver(t *testing.T) {
 		return func(n int) { bytes.Add(int64(n)) }, func() { ended.Add(1) }
 	}
 	serve := func(pl Payload) {
-		r := httptest.NewRequest("GET", "/x/"+sg.Encode(pl)+"/seg.ts", nil)
+		r := httptest.NewRequest("GET", "/x/"+sg.Seal(pl)+"/seg.ts", nil)
 		px.ServeSigned(httptest.NewRecorder(), r, "/x/", "http://p")
 	}
 	serve(Payload{U: up.URL + "/seg.ts"}) // no profile: not reported

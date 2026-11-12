@@ -2,6 +2,8 @@
 package proxy
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -70,6 +72,46 @@ func (s *Signer) Decode(tok string) (Payload, error) {
 		return p, ErrBadToken
 	}
 	j, err := base64.RawURLEncoding.DecodeString(body)
+	if err != nil || json.Unmarshal(j, &p) != nil {
+		return p, ErrBadToken
+	}
+	if p.E != 0 && time.Now().Unix() > p.E {
+		return p, ErrBadToken
+	}
+	return p, nil
+}
+
+// aead returns the cipher used for proxy links, keyed from the signing key
+// (hashed with a label so the two uses never share a raw key).
+func (s *Signer) aead() cipher.AEAD {
+	k := hmac.New(sha256.New, s.key)
+	k.Write([]byte("iptv proxy link v1"))
+	b, _ := aes.NewCipher(k.Sum(nil))
+	g, _ := cipher.NewGCM(b)
+	return g
+}
+
+// Seal returns the payload encrypted and authenticated in URL-safe base64, so
+// a proxy link does not reveal the upstream address, Referer or User-Agent.
+func (s *Signer) Seal(p Payload) string {
+	j, _ := json.Marshal(p)
+	g := s.aead()
+	nonce := make([]byte, g.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		panic(err)
+	}
+	return base64.RawURLEncoding.EncodeToString(g.Seal(nonce, nonce, j, nil))
+}
+
+// Open decrypts a link made by Seal and checks its expiry.
+func (s *Signer) Open(tok string) (Payload, error) {
+	var p Payload
+	b, err := base64.RawURLEncoding.DecodeString(tok)
+	g := s.aead()
+	if err != nil || len(b) < g.NonceSize()+g.Overhead() {
+		return p, ErrBadToken
+	}
+	j, err := g.Open(nil, b[:g.NonceSize()], b[g.NonceSize():], nil)
 	if err != nil || json.Unmarshal(j, &p) != nil {
 		return p, ErrBadToken
 	}

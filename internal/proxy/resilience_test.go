@@ -14,7 +14,7 @@ func signedGet(t *testing.T, px *Proxy, pl Payload) (int, string) {
 	t.Helper()
 	pl.E = time.Now().Add(time.Hour).Unix()
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/x/"+px.signer.Encode(pl)+"/f", nil)
+	req := httptest.NewRequest("GET", "/x/"+px.signer.Seal(pl)+"/f", nil)
 	px.ServeSigned(rec, req, "/x/", "http://proxy")
 	b, _ := io.ReadAll(rec.Result().Body)
 	return rec.Code, string(b)
