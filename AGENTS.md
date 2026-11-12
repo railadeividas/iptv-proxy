@@ -216,6 +216,9 @@ go vet ./... && go test ./...
   segments players asked for, `segSeg.put`), `segment_prefetch` (+ `_count`, `_keep_seconds`, `prefetchOn()`), `hls_head_start` (+ `_seconds`, `_keep_extra_seconds`,
   `headStartOn()`). They are independent: every feature passes its own ttl to `putTTL`, and only the master switch (`cache.on()`) disables all. A number never
   means "off" (minimum 1). The migration "cache settings get explicit on/off switches" converted stored 0s.
+  **Expiry and sweeping**: an expired entry is never served (`get`/`peek`/`has` treat it as a miss) and `usage()` does not count it, but it is only deleted by
+  `segCache.sweep`, run by `Proxy.Run` (started from `main`) every `segment_cache_sweep_seconds` (default 30; the timer is re-armed from `set.OnChange`), or when
+  `putTTL` needs room. `sweep` also drops held playlists older than `holdoverMaxAge`. Never delete anything that has not expired there.
 - **DASH prefetch** (`dash.go`): live MPDs with a `SegmentTimeline` get their newest segments fetched like HLS (`segment_prefetch`, `segment_prefetch_count`). The
   cache key is the real upstream directory (`dirString`, shared with the signed directory link) plus the expanded media path, so a prefetched
   segment is found by the player's `/xd/` request. Several qualities: only the one viewers ask for is fetched (learned in `ServeSigned`);

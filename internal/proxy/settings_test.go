@@ -1,10 +1,12 @@
 package proxy
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"iptv-proxy/internal/settings"
 	"iptv-proxy/internal/store"
@@ -146,5 +148,60 @@ func TestLinkEncryptionFollowsTheSetting(t *testing.T) {
 		if rec.Code != 200 || rec.Body.String() != "seg" {
 			t.Fatalf("serve %s: %d %q", tok, rec.Code, rec.Body.String())
 		}
+	}
+}
+
+// Expired segments are deleted by the sweeper, valid ones are not, and a changed interval applies without a restart.
+func TestCacheSweepRemovesOnlyExpiredAndFollowsTheSetting(t *testing.T) {
+	set := testSettings(t)
+	px := New(NewSigner([]byte("0123456789abcdef0123456789abcdef")), set)
+	if set.Int("segment_cache_sweep_seconds") != 30 {
+		t.Fatalf("default must be 30 seconds, got %d", set.Int("segment_cache_sweep_seconds"))
+	}
+	c := px.cache
+	c.putTTL("old", cached{status: 200, data: make([]byte, 1000)}, 50*time.Millisecond)
+	c.putTTL("new", cached{status: 200, data: make([]byte, 2000)}, time.Hour)
+	c.hold("stale", heldManifest{at: time.Now().Add(-2 * holdoverMaxAge)})
+	time.Sleep(80 * time.Millisecond)
+	if n, b := c.usage(); n != 1 || b != 2000 {
+		t.Fatalf("an expired segment must not count: %d entries %d bytes", n, b)
+	}
+	if n := c.sweep(time.Now()); n != 1 {
+		t.Fatalf("sweep removed %d", n)
+	}
+	if _, ok := c.peek("new"); !ok {
+		t.Fatal("a valid segment must survive the sweep")
+	}
+	if c.size != 2000 || len(c.m) != 1 || len(c.held) != 0 {
+		t.Fatalf("size %d entries %d held %d", c.size, len(c.m), len(c.held))
+	}
+
+	// the loop: a long interval leaves an expired segment alone, shortening it takes effect at once
+	set.Apply(map[string]any{"segment_cache_sweep_seconds": 600.0})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go px.Run(ctx)
+	time.Sleep(50 * time.Millisecond)
+	c.putTTL("short", cached{status: 200, data: make([]byte, 500)}, 20*time.Millisecond)
+	time.Sleep(1500 * time.Millisecond)
+	c.mu.Lock()
+	_, still := c.m["short"]
+	c.mu.Unlock()
+	if !still {
+		t.Fatal("with a 600 s interval nothing should have been swept yet")
+	}
+	set.Apply(map[string]any{"segment_cache_sweep_seconds": 1.0})
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		c.mu.Lock()
+		_, still = c.m["short"]
+		c.mu.Unlock()
+		if !still {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the new interval did not apply without a restart")
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }

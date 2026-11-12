@@ -124,11 +124,40 @@ func (c *segCache) noteHit(bytes int) {
 	c.hitBytes.Add(uint64(bytes))
 }
 
-// usage is what the cache holds now.
+// usage is what the cache holds and can still serve: segments that have expired are not counted, even if the
+// sweeper has not deleted them yet.
 func (c *segCache) usage() (entries, bytes int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return len(c.m), c.size
+	now := time.Now()
+	for _, e := range c.m {
+		if !now.After(e.expires) {
+			entries++
+			bytes += len(e.data)
+		}
+	}
+	return entries, bytes
+}
+
+// sweep deletes the segments that have expired and the held playlists that are too old to be served. Nothing that
+// can still be served is touched. It returns how many segments were deleted.
+func (c *segCache) sweep(now time.Time) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	n := 0
+	for k, e := range c.m {
+		if now.After(e.expires) {
+			c.size -= len(e.data)
+			delete(c.m, k)
+			n++
+		}
+	}
+	for k, h := range c.held {
+		if now.Sub(h.at) > holdoverMaxAge {
+			delete(c.held, k)
+		}
+	}
+	return n
 }
 
 // has reports whether a fresh copy is cached, without counting a hit or a miss.

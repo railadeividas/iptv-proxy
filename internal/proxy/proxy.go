@@ -89,6 +89,41 @@ func New(signer *Signer, set *settings.Settings) *Proxy {
 	return p
 }
 
+// Run deletes expired segments from the cache every segment_cache_sweep_seconds until ctx ends. The interval is read
+// when the timer is re-armed, and a change of the setting re-arms it at once.
+func (p *Proxy) Run(ctx context.Context) {
+	wake := make(chan struct{}, 1)
+	p.set.OnChange(func(keys []string) {
+		for _, k := range keys {
+			if k == "segment_cache_sweep_seconds" {
+				select {
+				case wake <- struct{}{}:
+				default:
+				}
+				return
+			}
+		}
+	})
+	t := time.NewTimer(p.set.Seconds("segment_cache_sweep_seconds"))
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-wake:
+		case <-t.C:
+			p.cache.sweep(time.Now())
+		}
+		if !t.Stop() {
+			select {
+			case <-t.C:
+			default:
+			}
+		}
+		t.Reset(p.set.Seconds("segment_cache_sweep_seconds"))
+	}
+}
+
 func newClient(set *settings.Settings) *http.Client {
 	connect := set.Seconds("upstream_connect_timeout_seconds")
 	tr := &http.Transport{

@@ -84,6 +84,7 @@ func run(cfg config.Config) error {
 	go syncer.Run(ctx)
 	go ep.Run(ctx)
 	go hc.Run(ctx)
+	go px.Run(ctx)
 
 	app := server.New(cfg, st, set, syncer, px, ep, hc, signer, hub, web.FS())
 	go app.Start(ctx)

@@ -130,6 +130,8 @@ var Defs = []Def{
 		Help: "The memory all of it together may use. When it is full, new segments are not stored until old ones expire."},
 	{Key: "segment_cache_item_max_mb", Needs: "segment_cache", Group: "proxy", Section: "Segment cache", Label: "Largest segment to cache", Kind: Int, Unit: "MB", Default: 12, Min: 1, Max: 64,
 		Help: "A video segment bigger than this is played but not stored, so one huge file cannot fill the cache. Not the same as the largest playlist to rewrite."},
+	{Key: "segment_cache_sweep_seconds", Needs: "segment_cache", Group: "proxy", Section: "Segment cache", Label: "Remove expired segments every", Kind: Int, Unit: "seconds", Default: 30, Min: 1, Max: 600,
+		Help: "Every segment is kept for the time its feature asks for (below) and is never served after that. This is how often the segments that have expired are deleted from memory and the \"Cache in use\" figure goes down. A shorter time frees memory sooner; it never removes a segment that is still valid."},
 	{Key: "segment_share", Needs: "segment_cache", Group: "proxy", Section: "Share segments between viewers", Label: "Share segments between viewers", Kind: Enum, Default: "on",
 		Options: []Option{{"on", "On"}, {"off", "Off"}},
 		Help:    "A segment a player asked for is kept, so other viewers of the same channel get it without another request to the stream server. Off: every player's segment request goes to the server (segments fetched ahead or for a head start are still handed out)."},
