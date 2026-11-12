@@ -7,7 +7,7 @@ COPY web/ .
 RUN npm run build
 
 # 2. Go binary (UI embedded via go:embed)
-FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine AS app
+FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine AS app
 # built on the runner's own architecture and cross-compiled (pure Go, no cgo), so arm64 needs no emulation here
 ARG TARGETOS TARGETARCH
 WORKDIR /src
